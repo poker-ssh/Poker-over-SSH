@@ -15,12 +15,12 @@
 
 - SSH server handling multiple sessions.
 - Game functions (card deck, hand level, betting rounds, poker actions, dealing, etc).
-- Dealer is controlled by a computor
+- Dealing is controlled by a computer. 
 - Game management (manages human and AI game).
   - Handles player registration and seat assignment.
   - Tracks player states (active, folded, all-in, disconnected).
-  - Manages player turns
-  - Timeouts — kicks player out of game due to inactivity
+  - Manages player turns. 
+  - Timeouts — kicks player out of game due to inactivity. 
   - Time limits — automatically folds hand if player exceeds time limit (1 minute)
   - Prefers humans when available, otherwise fills with AI bots.
   - Reconnection for dropped SSH sessions.
