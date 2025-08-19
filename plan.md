@@ -21,12 +21,16 @@
   - Tracks player states (active, folded, all-in, disconnected).
   - Manages player turns. 
   - Timeouts — kicks player out of game due to inactivity. 
-  - Time limits — automatically folds hand if player exceeds time limit (1 minute)
+  - Time limits — automatically folds hand if player exceeds time limit (20 seconds)
   - Prefers humans when available, otherwise fills with AI bots.
   - Reconnection for dropped SSH sessions.
 - Terminal UI renderer.
 - Python (asyncssh, blessed/rich for terminal UI)
-- Modular code, possibly in separate repos
+- Modular code
+  - Game logic in one module.
+  - UI rendering in another.
+  - SSH handling in another.
+  - etc...
 
 ### SSH server
 
