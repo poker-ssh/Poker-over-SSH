@@ -22,7 +22,8 @@
       - Handles player registration and seat assignment.
       - Tracks player states (active, folded, all-in, disconnected).
       - Manages player turns 
-      - timeouts
+      - Timeouts - kicks player (fold??) when e.g. the user idles at the terminal
+      - Time limits - Folds player if/when they take too long
       - Prefers humans when available, otherwise fills with AI bots.
       - reconnection for dropped SSH sessions. (is this needed?)
 - Terminal UI renderer.
