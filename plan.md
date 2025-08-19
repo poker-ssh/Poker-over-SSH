@@ -18,7 +18,7 @@
 - SSH server handling multiple sessions.
 - Game engine (deck, hand eval, betting rounds, etc. pls fill this).
 - Player manager (human and AI).
-    - Handles player registration and seat assignign.
+    - Handles player registration and seat assignment.
     - Tracks player states (active, folded, all-in, disconnected).
     - Manages player turns 
     - timeouts
