@@ -12,11 +12,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Lint and auto-fix Markdown files
-        uses: DavidAnson/markdownlint-cli2-action@v15
+        uses: DavidAnson/markdownlint-cli2-action@v20
         with:
           globs: '**/*.md'
           fix: true
-          continue-on-error: true
+        continue-on-error: true
 
       - name: Commit and push changes if any fixes were made
         run: |
