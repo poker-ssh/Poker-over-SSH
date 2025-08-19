@@ -17,6 +17,7 @@
 <!-- pls update the `pls fill` parts tysm. -->
 - SSH server handling multiple sessions.
 - Game engine (deck, hand eval, betting rounds, etc. pls fill this).
+- Dealer should be the computer.
 - Player manager (human and AI).
     - Handles player registration and seat assignment.
     - Tracks player states (active, folded, all-in, disconnected).
