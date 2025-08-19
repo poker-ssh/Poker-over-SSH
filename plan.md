@@ -22,9 +22,9 @@
   - Manages player turns.
   - Timeouts — kicks player out of game due to inactivity.
   - Time limits — automatically folds hand if player exceeds time limit (1 minute)
-  - Manages player turns. 
-  - Timeouts — kicks player out of game due to inactivity. 
-  - Time limits — automatically folds hand if player exceeds time limit (20 seconds) 
+  - Manages player turns.
+  - Timeouts — kicks player out of game due to inactivity.
+  - Time limits — automatically folds hand if player exceeds time limit (20 seconds)
   - Prefers humans when available, otherwise fills with AI bots.
   - Reconnection for dropped SSH sessions.
 - Terminal UI renderer.
