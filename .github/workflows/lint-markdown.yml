@@ -16,6 +16,7 @@ jobs:
         with:
           globs: '**/*.md'
           fix: true
+          continue-on-error: true
 
       - name: Commit and push changes if any fixes were made
         run: |
