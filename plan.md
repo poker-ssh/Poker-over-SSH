@@ -14,7 +14,7 @@
 
 
 ## Backend
-
+<!-- pls update the `pls fill` parts tysm. -->
 - SSH server handling multiple sessions.
 - Game engine (deck, hand eval, betting rounds, etc. pls fill this).
 - Player manager (human and AI).
