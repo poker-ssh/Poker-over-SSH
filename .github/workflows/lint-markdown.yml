@@ -11,7 +11,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Lint Markdown files
+      - name: Lint and auto-fix Markdown files
         uses: DavidAnson/markdownlint-cli2-action@v15
         with:
           globs: '**/*.md'
+          fix: true
+
+      - name: Commit and push changes if any fixes were made
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add '**/*.md'
+          if ! git diff --cached --quiet; then
+            git commit -m 'chore: auto-fix markdownlint issues [skip ci]'
+            git push
+          fi
