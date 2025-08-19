@@ -18,8 +18,12 @@
 - SSH server handling multiple sessions.
 - Game engine (deck, hand eval, betting rounds, etc. pls fill this).
 - Player manager (human and AI).
-    - Prefers humans when available, otherwise:
-    - Fills with AI bots.
+    - Handles player registration and seat assignign.
+    - Tracks player states (active, folded, all-in, disconnected).
+    - Manages player turns 
+    - timeouts
+    - Prefers humans when available, otherwise fills with AI bots.
+    - reconnection for dropped SSH sessions. (is this needed?)
 - Terminal UI renderer.
 - Python (asyncssh, blessed/rich for terminal UI)
 - Modular code, possibly in separate repos
