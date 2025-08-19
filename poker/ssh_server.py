@@ -15,128 +15,246 @@ except Exception:  # pragma: no cover - runtime dependency
 
 
 class _SimpleSession(asyncssh.SSHServerSession if asyncssh else object):
-    """Minimal interactive session used for testing purposes.
-    """
+    """Minimal interactive session that actually works with AsyncSSH."""
 
     def __init__(self, *args, **kwargs):
-        # Accept any arguments asyncssh passes
-        super().__init__() if asyncssh else None
+        # Accept any constructor args asyncssh passes.
+        if asyncssh:
+            try:
+                super().__init__(*args, **kwargs)
+            except Exception:
+                # Some asyncssh versions may have different signatures; ignore.
+                pass
+
+        # Instance state
         self._chan = None
-        self._input_buffer = ""
-        self._pty_requested = False
+        self._input = ""
+        self._has_pty = False
+        self._term = None
+        self._exec_cmd = None
 
     def connection_made(self, chan):
         self._chan = chan
+        try:
+            # Defer writing the welcome prompt until the session is fully
+            # started (PTY and line editor negotiated). session_started
+            # will send the welcome text and prompt.
+            pass
+        except Exception:
+            logging.exception("Failed to write welcome message")
 
-    def pty_requested(self, term_type, term_size, term_modes):
-        """Handle PTY requests from the client."""
-        self._pty_requested = True
-        return True
+    async def session_started(self):
+        # Now the channel and PTY (if requested) are ready.
+        # If this session was requested as an exec (ssh host command), run
+        # the command now while the channel is active so writes and exit
+        # are handled deterministically. Otherwise send the interactive
+        # welcome and prompt.
+        if self._exec_cmd:
+            cmd = self._exec_cmd
+            try:
+                logging.info(f"Executing stored exec command in session_started: {cmd!r}")
+                proc = await asyncio.create_subprocess_shell(
+                    cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
 
-    def session_started(self):
-        # short welcome and prompt
+                out, err = await proc.communicate()
+
+                if out and self._chan:
+                    try:
+                        txt = out.decode('utf-8', errors='ignore')
+                        self._chan.write(txt)
+                    except Exception:
+                        logging.exception("Failed to write command stdout to channel")
+
+                if err and self._chan:
+                    try:
+                        terr = err.decode('utf-8', errors='ignore')
+                        self._chan.write(terr)
+                    except Exception:
+                        logging.exception("Failed to write command stderr to channel")
+
+                # Signal EOF if supported and give a tiny moment to flush
+                try:
+                    if self._chan and hasattr(self._chan, 'send_eof'):
+                        try:
+                            self._chan.send_eof()
+                        except Exception:
+                            pass
+                    try:
+                        await asyncio.sleep(0.05)
+                    except Exception:
+                        pass
+                    if self._chan:
+                        try:
+                            self._chan.exit(proc.returncode or 0)
+                        except Exception:
+                            try:
+                                self._chan.close()
+                            except Exception:
+                                pass
+                except Exception:
+                    logging.exception("Error closing channel after exec command")
+            except Exception:
+                logging.exception("Error running exec command in session_started")
+                if self._chan:
+                    try:
+                        self._chan.write("Internal error executing command\r\n")
+                        try:
+                            self._chan.exit(1)
+                        except Exception:
+                            try:
+                                self._chan.close()
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+            return None
+
+        # Interactive shell: send welcome and prompt
         if self._chan:
-            self._chan.write("Welcome to Poker-over-SSH (demo)\r\n")
-            self._chan.write("Type 'help' for commands.\r\n")
-            self._chan.write("> ")
-            # Ensure the prompt is immediately visible
-            self._chan.flush()
+            try:
+                self._chan.write("Welcome to Poker-over-SSH (demo)\r\n")
+                self._chan.write("Type 'help' for commands.\r\n")
+                self._chan.write("> ")
+            except Exception:
+                logging.exception("Failed to write session welcome message")
+        return None
 
     def shell_requested(self):
-        # Accept shell requests
+        return True
+
+    def pty_requested(self, term, width, height, pixelwidth, pixelheight, modes):
+        """Called when the client requests a PTY; record state and accept."""
+        try:
+            logging.info(f"PTY requested: term={term!r}, size={width}x{height}")
+            self._has_pty = True
+            self._term = term
+        except Exception:
+            logging.exception("Error handling pty_requested")
+        return True
+
+    def exec_requested(self, command):
+        """Handle 'ssh host command' mode by running the command in a subprocess.
+
+        We schedule the actual execution on the event loop so this hook can
+        return quickly. The worker will write stdout/stderr back to the SSH
+        channel and then exit the channel when done.
+        """
+        if not self._chan:
+            return False
+
+        # Record the exec command; we'll run it in session_started when the
+        # channel is fully set up to avoid races with asyncssh channel life.
+        self._exec_cmd = command
+        return True
+
+    def eof_received(self):
+        """Handle EOF from the client; ensure channel is closed cleanly."""
+        try:
+            logging.info("EOF received from client")
+            if self._chan:
+                try:
+                    # Try to politely close the channel
+                    self._chan.send_eof()
+                except Exception:
+                    pass
+        except Exception:
+            logging.exception("Error in eof_received")
+        # Returning True indicates we've handled EOF
         return True
 
     def data_received(self, data, datatype):
-        # Handle incoming data
         if not self._chan:
             return
-            
+
         if isinstance(data, (bytes, bytearray)):
-            data = data.decode(errors="ignore")
+            try:
+                data = data.decode('utf-8', errors='ignore')
+            except Exception:
+                data = str(data)
+        # Log raw incoming data for debugging
+        try:
+            logging.info(f"Channel raw data received: {data!r}")
+        except Exception:
+            pass
 
-        # Handle special characters for PTY mode
-        if self._pty_requested:
-            for char in data:
-                if char == '\r' or char == '\n':
-                    # Process the current line
-                    cmd = self._input_buffer.strip()
-                    self._input_buffer = ""
-                    self._chan.write("\r\n")  # Echo newline
-                    self._process_command(cmd)
-                elif char == '\x7f' or char == '\x08':  # Backspace/DEL
-                    if self._input_buffer:
-                        self._input_buffer = self._input_buffer[:-1]
-                        # Erase character on terminal
-                        self._chan.write("\x08 \x08")
-                elif char == '\x03':  # Ctrl+C
-                    self._chan.write("^C\r\n")
-                    self._input_buffer = ""
-                    self._chan.write("> ")
-                    self._chan.flush()
-                elif char == '\x04':  # Ctrl+D (EOF)
-                    self._chan.write("Goodbye!\r\n")
-                    self._chan.exit(0)
-                    return
-                elif ord(char) >= 32 and ord(char) < 127:  # Printable ASCII characters
-                    self._input_buffer += char
-                    self._chan.write(char)  # Echo character
-                    self._chan.flush()
-        else:
-            # Non-PTY mode - simpler line processing
-            self._input_buffer += data
-            
-            # Process when we get a newline
-            while '\n' in self._input_buffer or '\r' in self._input_buffer:
-                if '\n' in self._input_buffer:
-                    line, self._input_buffer = self._input_buffer.split('\n', 1)
-                else:
-                    line, self._input_buffer = self._input_buffer.split('\r', 1)
-                
-                cmd = line.strip()
-                self._process_command(cmd)
+        # Echo back raw input immediately to make interactive typing visible
+        try:
+            if isinstance(data, (bytes, bytearray)):
+                out = data.decode('utf-8', errors='ignore')
+            else:
+                out = str(data)
 
-    def _process_command(self, cmd):
-        """Process a command and send response"""
+            # Write echo back to channel (safe-guard if channel gone)
+            try:
+                if self._chan:
+                    self._chan.write(out)
+            except Exception:
+                logging.exception("Failed to echo data to channel")
+        except Exception:
+            # Fall back to original behaviour if decoding fails
+            out = None
+
+        # Append to input buffer for line processing
+        self._input += data if isinstance(data, str) else (out or '')
+
+        # Process complete lines
+        while '\n' in self._input or '\r' in self._input:
+            if '\n' in self._input:
+                line, self._input = self._input.split('\n', 1)
+            else:
+                line, self._input = self._input.split('\r', 1)
+
+            line = line.rstrip('\r')
+            self._process_line(line)
+
+    def _process_line(self, line):
         if not self._chan:
             return
-            
+
+        cmd = line.strip()
+        # Log processed command/line so server operator can see activity
+        try:
+            logging.info(f"Channel input line processed: {cmd!r}")
+        except Exception:
+            pass
         if not cmd:
-            self._chan.write("> ")
-            self._chan.flush()
+            try:
+                self._chan.write("> ")
+            except Exception:
+                pass
             return
 
-        if cmd.lower() in ("quit", "exit"):
-            self._chan.write("Goodbye!\r\n")
-            self._chan.flush()
-            self._chan.exit(0)
+        if cmd.lower() in ('quit', 'exit'):
+            try:
+                self._chan.write("Goodbye!\r\n")
+                self._chan.exit(0)
+            except Exception:
+                try:
+                    self._chan.close()
+                except Exception:
+                    pass
             return
 
-        if cmd.lower() == "help":
-            self._chan.write("Commands:\r\n")
-            self._chan.write("  help     Show this help\r\n")
-            self._chan.write("  whoami   Show connection info\r\n")
-            self._chan.write("  seat     (demo) claim a seat\r\n")
-            self._chan.write("  quit     Disconnect\r\n")
-            self._chan.write("> ")
-            self._chan.flush()
-            return
+        try:
+            if cmd.lower() == 'help':
+                self._chan.write("Commands: help, whoami, seat, quit\r\n")
+            elif cmd.lower() == 'whoami':
+                self._chan.write("You are connected to Poker-over-SSH demo.\r\n")
+            elif cmd.lower() == 'seat':
+                self._chan.write("Seat claimed (demo).\r\n")
+            else:
+                self._chan.write(f"Unknown command: {cmd}\r\n")
 
-        if cmd.lower() == "whoami":
-            self._chan.write("You are connected to Poker-over-SSH demo.\r\n")
-            self._chan.write("> ")
-            self._chan.flush()
-            return
-
-        if cmd.lower() == "seat":
-            self._chan.write("Seat claimed (demo). In a full server this would register you.\r\n")
-            self._chan.write("> ")
-            self._chan.flush()
-            return
-
-        # Unknown command
-        self._chan.write(f"Unknown command: {cmd}\r\n")
-        self._chan.write("> ")
-        self._chan.flush()
+            # Prompt for next command
+            try:
+                self._chan.write("> ")
+            except Exception:
+                pass
+        except Exception:
+            logging.exception("Error processing line")
 
     def connection_lost(self, exc):
         self._chan = None
@@ -144,29 +262,12 @@ class _SimpleSession(asyncssh.SSHServerSession if asyncssh else object):
 
 if asyncssh:
     class _SimpleServer(asyncssh.SSHServer):
-        """Simple SSH server that accepts any connection without authentication."""
-        
-        def password_auth_supported(self):
-            return False
-        
-        def public_key_auth_supported(self):
-            return False
-        
-        def keyboard_interactive_auth_supported(self):
-            return False
-        
-        def gss_host_based_auth_supported(self):
-            return False
-        
-        def host_based_auth_supported(self):
-            return False
+        """Simple SSH server that skips authentication."""
         
         def begin_auth(self, username):
-            # Accept all connections without any authentication
-            logging.info(f"Accepting connection for user: {username}")
-            return ""  # Empty string means no auth required
+            # Skip authentication entirely - accept immediately
+            return False  # Return False to skip auth
 else:
-    # Create a dummy class for type checking when asyncssh is not available
     _SimpleServer = object  # type: ignore
 
 
