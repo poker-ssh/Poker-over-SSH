@@ -19,12 +19,12 @@
 - Game engine (deck, hand eval, betting rounds, etc. pls fill this).
 - Dealer should be the computer.
 - Player manager (human and AI).
-    - Handles player registration and seat assignment.
-    - Tracks player states (active, folded, all-in, disconnected).
-    - Manages player turns 
-    - timeouts
-    - Prefers humans when available, otherwise fills with AI bots.
-    - reconnection for dropped SSH sessions. (is this needed?)
+      - Handles player registration and seat assignment.
+      - Tracks player states (active, folded, all-in, disconnected).
+      - Manages player turns 
+      - timeouts
+      - Prefers humans when available, otherwise fills with AI bots.
+      - reconnection for dropped SSH sessions. (is this needed?)
 - Terminal UI renderer.
 - Python (asyncssh, blessed/rich for terminal UI)
 - Modular code, possibly in separate repos
