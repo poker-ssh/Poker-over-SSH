@@ -21,7 +21,7 @@
       - Tracks player states (active, folded, all-in, disconnected).
       - Manages player turns
       - Timeouts - kicks player out of game due to inactivity
-      - Time limits - automatically folds hand if player excedes time limit (1 minute)
+      - Time limits - automatically folds hand if player exceeds time limit (1 minute)
       - Prefers humans when available, otherwise fills with AI bots.
       - reconnection for dropped SSH sessions.
 - Terminal UI renderer.
