@@ -1,6 +1,5 @@
 # Internal Plan
 
-
 ## Game Design(??)
 <!-- pls update the `pls fill` parts tysm. also if there is a better subheading here, change it -->
 - Users connect via SSH to play.
@@ -12,7 +11,6 @@
 - Use colours, ASCII art, and good layouts.
 - Show cards, chips, player actions, and game state clearly.
 
-
 ## Backend
 <!-- pls update the `pls fill` parts tysm. -->
 - SSH server handling multiple sessions.
@@ -21,7 +19,7 @@
 - Player manager (human and AI).
       - Handles player registration and seat assignment.
       - Tracks player states (active, folded, all-in, disconnected).
-      - Manages player turns 
+      - Manages player turns
       - Timeouts - kicks player (fold??) when e.g. the user idles at the terminal
       - Time limits - Folds player if/when they take too long
       - Prefers humans when available, otherwise fills with AI bots.
