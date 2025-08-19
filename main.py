@@ -8,7 +8,7 @@ from poker.ssh_server import SSHServer
 
 async def main():
     server = SSHServer()
-    await server.start()
+    await server.serve_forever()
 
 if __name__ == "__main__":
     asyncio.run(main())

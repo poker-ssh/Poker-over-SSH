@@ -45,6 +45,13 @@ class _SimpleSession(asyncssh.SSHServerSession if asyncssh else object):
     def shell_requested(self):
         # Accept shell requests
         return True
+    
+    def exec_requested(self, command):
+        # Handle exec requests (simple echo for now)
+        if self._chan:
+            self._chan.write(f"Command executed: {command}\r\n")
+            self._chan.exit(0)
+        return True
 
     def data_received(self, data, datatype):
         # Handle incoming data
