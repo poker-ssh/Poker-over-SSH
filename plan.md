@@ -1,7 +1,7 @@
 # Internal Plan
 
 
-# Game Design(??)
+## Game Design(??)
 <!-- pls update the `pls fill` parts tysm. also if there is a better subheading here, change it -->
 - Users connect via SSH to play.
 - Each player gets a terminal-based UI.
