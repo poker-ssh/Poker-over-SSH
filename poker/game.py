@@ -193,11 +193,14 @@ class Game:
         {'action': 'fold'|'call'|'check'|'bet', 'amount': int}
         This implementation applies the action conservatively.
         """
-        current_bet = max(self.bets.values()) if self.bets else 0
         
         for p in self.players:
             if p.state != 'active':
                 continue
+                
+            # Calculate current bet fresh for each player's turn
+            current_bet = max(self.bets.values()) if self.bets else 0
+            
             try:
                 # Pass the current game state to the player
                 act = await p.take_action(self._public_state())
@@ -268,9 +271,6 @@ class Game:
                     if p.chips == 0:
                         p.state = 'all-in'
             # other actions ignored for now
-            
-            # Update current_bet after each action for next player
-            current_bet = max(self.bets.values()) if self.bets else 0
             
             # Small delay to ensure action is processed
             await asyncio.sleep(0.1)
