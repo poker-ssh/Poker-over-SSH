@@ -200,6 +200,12 @@ class Game:
             if p.state != 'active':
                 continue
                 
+            # Check if player has no chips
+            if p.chips <= 0:
+                # Give player a small rebuy to continue playing
+                p.chips = 50  # Small rebuy amount
+                self.action_history.append(f"{p.name} received $50 rebuy (was broke)")
+                
             # Calculate current bet fresh for each player's turn
             current_bet = max(self.bets.values()) if self.bets else 0
             
@@ -228,12 +234,17 @@ class Game:
                 p.chips -= pay
                 self.bets[p.name] += pay
                 self.pot += pay
-                if call_amount > 0:
+                
+                if p.chips == 0 and pay < call_amount:
+                    # Player went all-in but couldn't cover the full call
+                    p.state = 'all-in'
+                    self.action_history.append(f"{p.name} called ${pay} (all-in)")
+                elif call_amount > 0:
                     self.action_history.append(f"{p.name} called ${call_amount}")
+                    if p.chips == 0:
+                        p.state = 'all-in'
                 else:
                     self.action_history.append(f"{p.name} checked")
-                if p.chips == 0:
-                    p.state = 'all-in'
             elif a == 'check':
                 # Only allowed if no bet to call
                 if current_bet > self.bets[p.name]:
@@ -243,9 +254,14 @@ class Game:
                     p.chips -= pay
                     self.bets[p.name] += pay
                     self.pot += pay
-                    self.action_history.append(f"{p.name} called ${call_amount} (forced)")
-                    if p.chips == 0:
+                    
+                    if p.chips == 0 and pay < call_amount:
                         p.state = 'all-in'
+                        self.action_history.append(f"{p.name} called ${pay} (all-in, forced)")
+                    else:
+                        self.action_history.append(f"{p.name} called ${call_amount} (forced)")
+                        if p.chips == 0:
+                            p.state = 'all-in'
                 else:
                     self.action_history.append(f"{p.name} checked")
             elif a == 'bet':
@@ -297,14 +313,12 @@ class Game:
                         self.pot += pay
                         action_msg = f"{p.name} bet ${amt}"
                         self.action_history.append(action_msg)
-                        print(f"DEBUG: Recording bet action: {action_msg}, pot now: {self.pot}, player bet: {self.bets[p.name]}")
                         if p.chips == 0:
                             p.state = 'all-in'
             # other actions ignored for now
             
             # Small delay to ensure action is processed
             await asyncio.sleep(0.1)
-            print(f"DEBUG: After {p.name}'s turn - Action history: {self.action_history[-3:] if len(self.action_history) >= 3 else self.action_history}")
 
     def evaluate_hands(self) -> Dict[str, Any]:
         """Evaluate active (non-folded) players and determine winners.
