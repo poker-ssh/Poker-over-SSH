@@ -57,6 +57,9 @@ class _SimpleSessionBase:
                         char = data.decode('utf-8', errors='ignore')
                     else:
                         char = data
+                    # Log control characters  (debugging)
+                    if char in ("\x03", "\x04"):
+                        logging.info(f"_SimpleSessionBase: received control char: {repr(char)}")
                     await self._handle_char(char)
                     
                     # Check again if need exit after handling char
@@ -72,6 +75,7 @@ class _SimpleSessionBase:
             print(f"Input reader error: {e}")
         finally:
             # Session is ending - close streams
+            logging.info("_SimpleSessionBase: input reader ending")
             try:
                 if hasattr(self._stdout, 'close'):
                     self._stdout.close()
@@ -115,9 +119,11 @@ class _SimpleSessionBase:
     # needed otherwise ctrl-c will close the connection to server
     def signal_received(self, signame):
         """Handle signals sent by the client (PTY)."""
+        logging.debug(f"_SimpleSessionBase.signal_received: {signame}")
         # Only handle SIGINT (Ctrl-C)
         try:
             if signame in ("INT", "SIGINT"):
+                logging.debug("Handling SIGINT in session; clearing input buffer")
                 # Write ^C and reset the input buffer. Use create_task to avoid
                 # blocking the signal handler; _stdout.drain is async.
                 self._input_buffer = ""
@@ -130,12 +136,24 @@ class _SimpleSessionBase:
                         pass
                 except Exception:
                     pass
-                # Returning True indicates we've handled the signal.
+                logging.debug("SIGINT handled by session")
                 return True
         except Exception:
-            pass
+            logging.exception("Error in signal_received")
         # Return False/None to allow default handling
         return False
+
+    # asyncssh will call session_started when the channel is ready
+    def session_started(self, channel):
+        """Called by asyncssh when a session channel is started.
+
+        Store the channel so we can explicitly manage it later if needed.
+        """
+        self._channel = channel
+        logging.info(f"_SimpleSessionBase.session_started: channel={channel}")
+
+    def connection_lost(self, exc):
+        logging.info(f"_SimpleSessionBase.connection_lost: exc={exc}")
 
     async def _process_command(self, cmd):
         """Process a command"""
