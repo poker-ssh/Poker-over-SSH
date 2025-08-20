@@ -163,7 +163,8 @@ class _SimpleSessionBase:
             self._stdout.write("  whoami   Show connection info\r\n")
             self._stdout.write("  seat     (demo) claim a seat\r\n")
             self._stdout.write("  quit     Disconnect\r\n")
-            self._stdout.write("❯ ")
+            # Add a blank line between output and the next prompt; makes it prettier IMO
+            self._stdout.write("\r\n❯ ")
             try:
                 await self._stdout.drain()
             except Exception:
@@ -172,7 +173,8 @@ class _SimpleSessionBase:
             
         if cmd.lower() == "whoami":
             self._stdout.write("You are connected to Poker-over-SSH demo.\r\n")
-            self._stdout.write("❯ ")
+            # blank line then prompt
+            self._stdout.write("\r\n❯ ")
             try:
                 await self._stdout.drain()
             except Exception:
@@ -181,16 +183,17 @@ class _SimpleSessionBase:
             
         if cmd.lower() == "seat":
             self._stdout.write("Seat claimed (demo). In a PROPER server this would register you.\r\n")
-            self._stdout.write("❯ ")
+            # blank line then prompt
+            self._stdout.write("\r\n❯ ")
             try:
                 await self._stdout.drain()
             except Exception:
                 pass
             return
-            
         # Unknown command
         self._stdout.write(f"Unknown command: {cmd}\r\n")
-        self._stdout.write("❯ ")
+        # blank line then prompt
+        self._stdout.write("\r\n❯ ")
         # Ensure output is flushed immediately
         try:
             await self._stdout.drain()
