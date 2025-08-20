@@ -202,10 +202,15 @@ class Game:
                 
             # Check if player has no chips
             if p.chips <= 0:
-                # Give player a small rebuy to continue playing
-                p.chips = 50  # Small rebuy amount
-                self.action_history.append(f"{p.name} received $50 rebuy (was broke)")
-                
+                if getattr(p, 'rebuys', 0) < 1:
+                    p.chips = 50  # Small rebuy amount
+                    p.rebuys += 1
+                    self.action_history.append(f"{p.name} received $50 rebuy (was broke, {p.rebuys}/1)")
+                else:
+                    p.state = 'eliminated'
+                    self.action_history.append(f"{p.name} eliminated (no rebuys left)")
+                    continue
+            
             # Calculate current bet fresh for each player's turn
             current_bet = max(self.bets.values()) if self.bets else 0
             
