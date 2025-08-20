@@ -10,6 +10,7 @@ This module provides a small demo server that registers players via the
 import asyncio
 import logging
 from typing import Optional, Dict, Any
+from poker.terminal_ui import Colors
 
 
 try:
@@ -200,12 +201,8 @@ class _SimpleSessionBase:
         if cmd.lower() == "start":
             if self._server_state is not None:
                 try:
-                    await self._server_state.start_game_round()
-                    try:
-                        self._stdout.write("Game round started!\r\n\r\n❯ ")
-                        await self._stdout.drain()
-                    except Exception:
-                        pass
+                    result = await self._server_state.start_game_round()
+                    # Don't write anything here - results are broadcasted by start_game_round
                 except Exception as e:
                     try:
                         self._stdout.write(f"Failed to start game: {e}\r\n\r\n❯ ")
@@ -280,19 +277,50 @@ class ServerState:
             try:
                 from poker.terminal_ui import TerminalUI
                 ui = TerminalUI(player.name)
-                # show public state and prompt
-                view = ui.render(game_state)
+                # show public state and player's private hand
+                view = ui.render(game_state, player_hand=player.hand)
+                
+                # Check if session is still connected
+                if session._stdout.is_closing():
+                    return {'action': 'fold', 'amount': 0}
+                    
                 session._stdout.write(view + "\r\n")
-                session._stdout.write("Action (fold/call/check/bet <amt>): ")
+                
+                # Better prompt with options
+                current_bet = max(game_state.get('bets', {}).values()) if game_state.get('bets') else 0
+                player_bet = game_state.get('bets', {}).get(player.name, 0)
+                to_call = current_bet - player_bet
+                
+                if to_call > 0:
+                    session._stdout.write(f"💭 Your turn! (fold, call ${to_call}, or bet <amount>): ")
+                else:
+                    session._stdout.write("💭 Your turn! (fold, check, or bet <amount>): ")
                 await session._stdout.drain()
-                # read a full line from the session stdin
-                line = await session._stdin.readline()
+                
+                # read a full line from the session stdin with timeout
+                try:
+                    line = await asyncio.wait_for(session._stdin.readline(), timeout=30.0)
+                except asyncio.TimeoutError:
+                    # Auto-fold on timeout
+                    return {'action': 'fold', 'amount': 0}
+                    
                 if isinstance(line, bytes):
                     line = line.decode('utf-8', errors='ignore')
                 line = (line or "").strip()
+                
                 if not line:
-                    return {'action': 'check', 'amount': 0}
+                    # Default to check if no bet to call, otherwise call
+                    current_bet = max(game_state.get('bets', {}).values()) if game_state.get('bets') else 0
+                    player_bet = game_state.get('bets', {}).get(player.name, 0)
+                    if current_bet > player_bet:
+                        return {'action': 'call', 'amount': 0}
+                    else:
+                        return {'action': 'check', 'amount': 0}
+                        
                 parts = line.split()
+                if not parts:
+                    return {'action': 'check', 'amount': 0}
+                    
                 cmd = parts[0].lower()
                 if cmd in ('fold', 'f'):
                     return {'action': 'fold', 'amount': 0}
@@ -308,6 +336,7 @@ class ServerState:
                     return {'action': 'bet', 'amount': amt}
                 return {'action': 'call', 'amount': 0}
             except Exception:
+                # If any error occurs, fold to keep the game going
                 return {'action': 'fold', 'amount': 0}
 
         # assign actor to player
@@ -327,15 +356,41 @@ class ServerState:
         # broadcast results to sessions
         for session, player in list(self.session_map.items()):
             try:
-                session._stdout.write("Round finished\r\n")
+                # Check if session is still connected
+                if session._stdout.is_closing():
+                    continue
+                    
+                session._stdout.write(f"\r\n🏆 {Colors.BOLD}{Colors.YELLOW}=== ROUND RESULTS ==={Colors.RESET}\r\n")
+                session._stdout.write(f"💰 Final Pot: {Colors.GREEN}${result.get('pot', 0)}{Colors.RESET}\r\n")
+                winners = result.get('winners', [])
+                if len(winners) == 1:
+                    session._stdout.write(f"🎉 Winner: {Colors.BOLD}{Colors.GREEN}{winners[0]}{Colors.RESET}\r\n")
+                else:
+                    session._stdout.write(f"🤝 Tie between: {Colors.BOLD}{Colors.GREEN}{', '.join(winners)}{Colors.RESET}\r\n")
+                
+                session._stdout.write("\r\n🃏 Final hands:\r\n")
                 hands = result.get('hands') if isinstance(result, dict) else None
                 if hands:
                     for pname, handval in hands.items():
-                        session._stdout.write(f"{pname}: {handval}\r\n")
-                session._stdout.write("\r\n")
+                        hand_rank, tiebreakers = handval
+                        rank_names = {0: 'High Card', 1: 'Pair', 2: 'Two Pair', 3: 'Three of a Kind', 
+                                     4: 'Straight', 5: 'Flush', 6: 'Full House', 7: 'Four of a Kind', 
+                                     8: 'Straight Flush'}
+                        rank_name = rank_names.get(hand_rank, f"Rank {hand_rank}")
+                        winner_mark = "👑" if pname in winners else "  "
+                        session._stdout.write(f"{winner_mark} {pname}: {Colors.CYAN}{rank_name}{Colors.RESET}\r\n")
+                
+                session._stdout.write(f"{Colors.YELLOW}{'='*30}{Colors.RESET}\r\n\r\n❯ ")
                 await session._stdout.drain()
-            except Exception:
-                pass
+            except Exception as e:
+                # Fallback to simple display or skip if connection is closed
+                try:
+                    session._stdout.write(f"Round finished. Winners: {', '.join(result.get('winners', []))}\r\n❯ ")
+                    await session._stdout.drain()
+                except Exception:
+                    # Connection is likely closed, remove from session map
+                    if session in self.session_map:
+                        del self.session_map[session]
 
         return result
 

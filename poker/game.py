@@ -190,6 +190,8 @@ class Game:
         {'action': 'fold'|'call'|'check'|'bet', 'amount': int}
         This implementation applies the action conservatively.
         """
+        current_bet = max(self.bets.values()) if self.bets else 0
+        
         for p in self.players:
             if p.state != 'active':
                 continue
@@ -197,7 +199,7 @@ class Game:
                 act = await p.take_action(self._public_state())
             except NotImplementedError:
                 # default to call/check
-                act = {'action': 'call', 'amount': min_call}
+                act = {'action': 'call', 'amount': current_bet}
             except Exception:
                 # on any actor error, fold the player
                 p.state = 'folded'
@@ -205,22 +207,38 @@ class Game:
 
             a = act.get('action')
             amt = int(act.get('amount', 0))
+            
             if a == 'fold':
                 p.state = 'folded'
-            elif a == 'call' or a == 'check':
-                pay = max(min_call - self.bets[p.name], 0)
-                pay = min(pay, p.chips)
+            elif a == 'call':
+                # Call the current bet
+                call_amount = max(current_bet - self.bets[p.name], 0)
+                pay = min(call_amount, p.chips)
                 p.chips -= pay
                 self.bets[p.name] += pay
                 self.pot += pay
                 if p.chips == 0:
                     p.state = 'all-in'
+            elif a == 'check':
+                # Only allowed if no bet to call
+                if current_bet > self.bets[p.name]:
+                    # Force to call
+                    call_amount = current_bet - self.bets[p.name]
+                    pay = min(call_amount, p.chips)
+                    p.chips -= pay
+                    self.bets[p.name] += pay
+                    self.pot += pay
+                    if p.chips == 0:
+                        p.state = 'all-in'
             elif a == 'bet':
-                betamt = max(amt, min_call)
-                pay = min(betamt, p.chips)
+                # Bet the specified amount (must be at least current bet)
+                total_bet = max(amt, current_bet)
+                bet_amount = total_bet - self.bets[p.name]
+                pay = min(bet_amount, p.chips)
                 p.chips -= pay
                 self.bets[p.name] += pay
                 self.pot += pay
+                current_bet = max(current_bet, self.bets[p.name])
                 if p.chips == 0:
                     p.state = 'all-in'
             # other actions ignored for now
