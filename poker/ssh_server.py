@@ -20,7 +20,7 @@ except Exception:  # pragma: no cover - runtime dependency
 
 
 class _SimpleSessionBase:
-    def __init__(self, stdin, stdout, stderr, server_state=None):
+    def __init__(self, stdin, stdout, stderr, server_state=None, username=None):
         self._stdin = stdin
         self._stdout = stdout
         self._stderr = stderr
@@ -29,10 +29,14 @@ class _SimpleSessionBase:
         self._reader_task: Optional[asyncio.Task] = None
         self._should_exit = False
         self._server_state = server_state
+        self._username = username
+        self._auto_seated = False  # Track if user was auto-seated
 
         # Send welcome message immediately
         try:
             self._stdout.write("Welcome to Poker-over-SSH (demo)\r\n")
+            if username:
+                self._stdout.write(f"Logged in as: {username}\r\n")
             self._stdout.write("Type 'help' for commands.\r\n")
             self._stdout.write("❯ ")
         except Exception:
@@ -166,7 +170,8 @@ class _SimpleSessionBase:
 
         if cmd.lower() == "whoami":
             try:
-                self._stdout.write("You are connected to Poker-over-SSH demo.\r\n\r\n❯ ")
+                self._stdout.write(f"You are connected as: {self._username}\r\n")
+                self._stdout.write("Connected to Poker-over-SSH demo.\r\n\r\n❯ ")
                 await self._stdout.drain()
             except Exception:
                 pass
@@ -225,6 +230,17 @@ class _SimpleSessionBase:
         if cmd.lower() == "start":
             if self._server_state is not None:
                 try:
+                    # Auto-seat user if they haven't been seated yet and we have their username
+                    if not self._auto_seated and self._username and self not in self._server_state.session_map:
+                        try:
+                            player = self._server_state.register_player_for_session(self._username, self)
+                            self._auto_seated = True
+                            self._stdout.write(f"🎭 Auto-seated as: {self._username}\r\n")
+                            await self._stdout.drain()
+                        except Exception as e:
+                            self._stdout.write(f"Failed to auto-seat: {e}\r\n")
+                            await self._stdout.drain()
+                    
                     result = await self._server_state.start_game_round()
                     # Check if game was already in progress
                     if isinstance(result, dict) and result.get("error"):
@@ -253,12 +269,17 @@ class _SimpleSessionBase:
             pass
 
 
+# Global variable to store current SSH username
+_current_ssh_username = 'guest'
+
 # If asyncssh is available, create a session class compatible with it.
 if asyncssh:
     class _SimpleSession(_SimpleSessionBase, asyncssh.SSHServerSession):
-        pass
+        def __init__(self, *args, **kwargs):
+            # Use the global username set during authentication
+            super().__init__(*args, username=_current_ssh_username, **kwargs)
 
-    class _SimpleServer(asyncssh.SSHServer):
+    class _SimpleServer(asyncssh.SSHServer):            
         def password_auth_supported(self):
             return False
 
@@ -275,10 +296,12 @@ if asyncssh:
             return False
 
         def begin_auth(self, username):
+            global _current_ssh_username
             logging.info(f"Accepting connection for user: {username}")
+            _current_ssh_username = username
             return ""
 else:
-    _SimpleSession = _SimpleSessionBase
+    _SimpleSession = _SimpleSessionBase  # type: ignore
     _SimpleServer = object  # type: ignore
 
 
