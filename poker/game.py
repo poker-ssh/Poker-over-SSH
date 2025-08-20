@@ -249,9 +249,9 @@ class Game:
                 else:
                     self.action_history.append(f"{p.name} checked")
             elif a == 'bet':
-                # Bet the specified amount (must be at least current bet)
+                # Bet the specified amount (must be positive)
                 if amt <= 0:
-                    # Invalid bet amount, treat as check
+                    # Invalid bet amount, treat as check/call
                     if current_bet > self.bets[p.name]:
                         call_amount = current_bet - self.bets[p.name]
                         pay = min(call_amount, p.chips)
@@ -262,20 +262,49 @@ class Game:
                     else:
                         self.action_history.append(f"{p.name} checked")
                 else:
-                    # Valid bet - amt is the total amount they want to bet
-                    bet_amount = amt - self.bets[p.name]
-                    pay = min(bet_amount, p.chips)
-                    p.chips -= pay
-                    self.bets[p.name] += pay
-                    self.pot += pay
-                    current_bet = max(current_bet, self.bets[p.name])
-                    self.action_history.append(f"{p.name} bet ${amt}")
-                    if p.chips == 0:
-                        p.state = 'all-in'
+                    # Valid bet amount - determine if it's a valid raise
+                    current_player_bet = self.bets[p.name]
+                    
+                    if current_bet == 0:
+                        # No one has bet yet - any positive amount is valid
+                        bet_amount = amt - current_player_bet
+                        pay = min(bet_amount, p.chips)
+                        p.chips -= pay
+                        self.bets[p.name] += pay
+                        self.pot += pay
+                        action_msg = f"{p.name} bet ${amt}"
+                        self.action_history.append(action_msg)
+                        print(f"DEBUG: Recording bet action: {action_msg}, pot now: {self.pot}, player bet: {self.bets[p.name]}")
+                        if p.chips == 0:
+                            p.state = 'all-in'
+                    elif amt <= current_bet:
+                        # Bet amount is not enough to raise - force to call
+                        call_amount = max(current_bet - current_player_bet, 0)
+                        pay = min(call_amount, p.chips)
+                        p.chips -= pay
+                        self.bets[p.name] += pay
+                        self.pot += pay
+                        if call_amount > 0:
+                            self.action_history.append(f"{p.name} called ${call_amount} (bet ${amt} too small)")
+                        else:
+                            self.action_history.append(f"{p.name} checked (bet ${amt} too small)")
+                    else:
+                        # Valid raise - amt is higher than current bet
+                        bet_amount = amt - current_player_bet
+                        pay = min(bet_amount, p.chips)
+                        p.chips -= pay
+                        self.bets[p.name] += pay
+                        self.pot += pay
+                        action_msg = f"{p.name} bet ${amt}"
+                        self.action_history.append(action_msg)
+                        print(f"DEBUG: Recording bet action: {action_msg}, pot now: {self.pot}, player bet: {self.bets[p.name]}")
+                        if p.chips == 0:
+                            p.state = 'all-in'
             # other actions ignored for now
             
             # Small delay to ensure action is processed
             await asyncio.sleep(0.1)
+            print(f"DEBUG: After {p.name}'s turn - Action history: {self.action_history[-3:] if len(self.action_history) >= 3 else self.action_history}")
 
     def evaluate_hands(self) -> Dict[str, Any]:
         """Evaluate active (non-folded) players and determine winners.

@@ -15,7 +15,7 @@ class PokerAI:
 
     async def decide_action(self, game_state: Dict[str, Any]) -> Dict[str, Any]:
         # Add a small random delay to simulate thinking
-        await asyncio.sleep(random.uniform(0.5, 2.0))
+        await asyncio.sleep(random.uniform(0.5, 1.5))
         
         # game_state contains 'community', 'pot', 'bets', 'players'
         community = game_state.get('community', [])
