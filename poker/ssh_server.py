@@ -44,6 +44,10 @@ class _SimpleSession:
         """Continuously read input from stdin"""
         try:
             while self._running:
+                # Check if need exit
+                if self._should_exit:
+                    break
+                    
                 # read one char at a time for interactive input
                 try:
                     data = await self._stdin.read(1)
@@ -56,6 +60,10 @@ class _SimpleSession:
                     else:
                         char = data
                     await self._handle_char(char)
+                    
+                    # Check again if need exit after handling char
+                    if self._should_exit:
+                        break
                         
                 except Exception as e:
                     print(f"Error reading input: {e}")
@@ -64,6 +72,13 @@ class _SimpleSession:
             pass
         except Exception as e:
             print(f"Input reader error: {e}")
+        finally:
+            # Session is ending - close streams
+            try:
+                if hasattr(self._stdout, 'close'):
+                    self._stdout.close()
+            except Exception:
+                pass
     
     async def _handle_char(self, char):
         """Handle a single character of input"""
