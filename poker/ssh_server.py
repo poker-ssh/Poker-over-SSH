@@ -14,139 +14,107 @@ except Exception:  # pragma: no cover - runtime dependency
     asyncssh = None
 
 
-class _SimpleSession(asyncssh.SSHServerSession if asyncssh else object):
-    """Minimal interactive session used for testing purposes.
-    """
+class _SimpleSession:
+    """Minimal interactive session that works with asyncssh streams."""
 
-    def __init__(self, *args, **kwargs):
-        # Accept any arguments asyncssh passes
-        super().__init__() if asyncssh else None
-        self._chan = None
+    def __init__(self, stdin, stdout, stderr):
+        self._stdin = stdin
+        self._stdout = stdout  
+        self._stderr = stderr
         self._input_buffer = ""
-        self._pty_requested = False
-
-    def connection_made(self, chan):
-        self._chan = chan
-
-    def pty_requested(self, term_type, term_size, term_modes):
-        """Handle PTY requests from the client."""
-        self._pty_requested = True
-        return True
-
-    def session_started(self):
-        # short welcome and prompt
-        if self._chan:
-            self._chan.write("Welcome to Poker-over-SSH (demo)\r\n")
-            self._chan.write("Type 'help' for commands.\r\n")
-            self._chan.write("> ")
-            # Ensure the prompt is immediately visible
-            self._chan.flush()
-
-    def shell_requested(self):
-        # Accept shell requests
-        return True
+        self._running = True
+        
+        # Send welcome message immediately
+        self._stdout.write("Welcome to Poker-over-SSH (demo)\r\n")
+        self._stdout.write("Type 'help' for commands.\r\n")
+        self._stdout.write("> ")
+        
+        # Start the input reading task
+        asyncio.create_task(self._read_input())
+        
+    async def _read_input(self):
+        """Continuously read input from stdin"""
+        try:
+            while self._running:
+                # Read one character at a time for interactive input
+                try:
+                    data = await self._stdin.read(1)
+                    if not data:
+                        break
+                        
+                    # Handle both bytes and str
+                    if isinstance(data, bytes):
+                        char = data.decode('utf-8', errors='ignore')
+                    else:
+                        char = data
+                    await self._handle_char(char)
+                        
+                except Exception as e:
+                    print(f"Error reading input: {e}")
+                    break
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            print(f"Input reader error: {e}")
     
-    def exec_requested(self, command):
-        # Handle exec requests (simple echo for now)
-        if self._chan:
-            self._chan.write(f"Command executed: {command}\r\n")
-            self._chan.exit(0)
-        return True
-
-    def data_received(self, data, datatype):
-        # Handle incoming data
-        if not self._chan:
+    async def _handle_char(self, char):
+        """Handle a single character of input"""
+        if char == '\r' or char == '\n':
+            # Process command
+            cmd = self._input_buffer.strip()
+            self._input_buffer = ""
+            self._stdout.write("\r\n")
+            await self._process_command(cmd)
+        elif char == '\x7f' or char == '\x08':  # Backspace
+            if self._input_buffer:
+                self._input_buffer = self._input_buffer[:-1]
+                self._stdout.write("\x08 \x08")
+        elif char == '\x03':  # Ctrl+C  
+            self._stdout.write("^C\r\n> ")
+            self._input_buffer = ""
+        elif char == '\x04':  # Ctrl+D
+            self._stdout.write("Goodbye!\r\n")
+            self._running = False
+            self._stdout.close()
             return
-            
-        if isinstance(data, (bytes, bytearray)):
-            data = data.decode(errors="ignore")
-
-        # Handle special characters for PTY mode
-        if self._pty_requested:
-            for char in data:
-                if char == '\r' or char == '\n':
-                    # Process the current line
-                    cmd = self._input_buffer.strip()
-                    self._input_buffer = ""
-                    self._chan.write("\r\n")  # Echo newline
-                    self._process_command(cmd)
-                elif char == '\x7f' or char == '\x08':  # Backspace/DEL
-                    if self._input_buffer:
-                        self._input_buffer = self._input_buffer[:-1]
-                        # Erase character on terminal
-                        self._chan.write("\x08 \x08")
-                elif char == '\x03':  # Ctrl+C
-                    self._chan.write("^C\r\n")
-                    self._input_buffer = ""
-                    self._chan.write("> ")
-                    self._chan.flush()
-                elif char == '\x04':  # Ctrl+D (EOF)
-                    self._chan.write("Goodbye!\r\n")
-                    self._chan.exit(0)
-                    return
-                elif ord(char) >= 32 and ord(char) < 127:  # Printable ASCII characters
-                    self._input_buffer += char
-                    self._chan.write(char)  # Echo character
-                    self._chan.flush()
-        else:
-            # Non-PTY mode - simpler line processing
-            self._input_buffer += data
-            
-            # Process when we get a newline
-            while '\n' in self._input_buffer or '\r' in self._input_buffer:
-                if '\n' in self._input_buffer:
-                    line, self._input_buffer = self._input_buffer.split('\n', 1)
-                else:
-                    line, self._input_buffer = self._input_buffer.split('\r', 1)
+        elif ord(char) >= 32 and ord(char) < 127:  # Printable
+            self._input_buffer += char
+            self._stdout.write(char)  # Echo
                 
-                cmd = line.strip()
-                self._process_command(cmd)
-
-    def _process_command(self, cmd):
-        """Process a command and send response"""
-        if not self._chan:
+    async def _process_command(self, cmd):
+        """Process a command"""
+        if not cmd:
+            self._stdout.write("> ")
             return
             
-        if not cmd:
-            self._chan.write("> ")
-            self._chan.flush()
-            return
-
         if cmd.lower() in ("quit", "exit"):
-            self._chan.write("Goodbye!\r\n")
-            self._chan.flush()
-            self._chan.exit(0)
+            self._stdout.write("Goodbye!\r\n")
+            self._running = False
+            self._stdout.close()
             return
-
+            
         if cmd.lower() == "help":
-            self._chan.write("Commands:\r\n")
-            self._chan.write("  help     Show this help\r\n")
-            self._chan.write("  whoami   Show connection info\r\n")
-            self._chan.write("  seat     (demo) claim a seat\r\n")
-            self._chan.write("  quit     Disconnect\r\n")
-            self._chan.write("> ")
-            self._chan.flush()
+            self._stdout.write("Commands:\r\n")
+            self._stdout.write("  help     Show this help\r\n")
+            self._stdout.write("  whoami   Show connection info\r\n")
+            self._stdout.write("  seat     (demo) claim a seat\r\n")
+            self._stdout.write("  quit     Disconnect\r\n")
+            self._stdout.write("> ")
             return
-
+            
         if cmd.lower() == "whoami":
-            self._chan.write("You are connected to Poker-over-SSH demo.\r\n")
-            self._chan.write("> ")
-            self._chan.flush()
+            self._stdout.write("You are connected to Poker-over-SSH demo.\r\n")
+            self._stdout.write("> ")
             return
-
+            
         if cmd.lower() == "seat":
-            self._chan.write("Seat claimed (demo). In a full server this would register you.\r\n")
-            self._chan.write("> ")
-            self._chan.flush()
+            self._stdout.write("Seat claimed (demo). In a full server this would register you.\r\n")
+            self._stdout.write("> ")
             return
-
+            
         # Unknown command
-        self._chan.write(f"Unknown command: {cmd}\r\n")
-        self._chan.write("> ")
-        self._chan.flush()
-
-    def connection_lost(self, exc):
-        self._chan = None
+        self._stdout.write(f"Unknown command: {cmd}\r\n")
+        self._stdout.write("> ")
 
 
 if asyncssh:
