@@ -1,3 +1,3 @@
 # Poker-over-SSH  
 
-### work in progress   
+### work in progress
