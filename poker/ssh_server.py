@@ -200,11 +200,25 @@ class _SimpleSessionBase:
                     pass
             return
 
-        # seat <name> registers player with the server_state
+        # seat [name] registers player with the server_state
         if cmd.lower().startswith("seat"):
             parts = cmd.split()
-            if len(parts) >= 2 and self._server_state is not None:
-                name = parts[1]
+            if self._server_state is not None:
+                if len(parts) >= 2:
+                    # seat <name> - use provided name
+                    name = parts[1]
+                elif len(parts) == 1 and self._username:
+                    # seat (no args) - use SSH username
+                    name = self._username
+                else:
+                    # No name provided and no SSH username available
+                    try:
+                        self._stdout.write("Usage: seat [name] (defaults to SSH username)\r\n\r\n❯ ")
+                        await self._stdout.drain()
+                    except Exception:
+                        pass
+                    return
+                
                 try:
                     player = self._server_state.register_player_for_session(name, self)
                     try:
@@ -220,7 +234,7 @@ class _SimpleSessionBase:
                         pass
             else:
                 try:
-                    self._stdout.write("Usage: seat <name>\r\n\r\n❯ ")
+                    self._stdout.write("Server state not available\r\n\r\n❯ ")
                     await self._stdout.drain()
                 except Exception:
                     pass
