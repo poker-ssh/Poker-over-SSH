@@ -1,5 +1,13 @@
 """
-Beautiful terminal UI renderer for Poker-over-SSH with colors and card symbols.
+Beautiful terminal UI renderer for Poker-over-SSH with colors and car        # Recent actions section
+        action_history = game_state.get('action_history', [])
+        if action_history:
+            output.append(f"{Colors.CYAN}📝 Recent Actions:{Colors.RESET}")
+            # Show last 4 actions to see more context
+            recent_actions = action_history[-4:]
+            for action in recent_actions:
+                output.append(f"   • {action}")
+        output.append("")ols.
 
 This keeps presentation logic out of the engine so SSH sessions can call
 `TerminalUI.render(game_state)` to get a colorized string to send to clients.
@@ -22,6 +30,7 @@ class Colors:
     RESET = '\033[0m'
     BG_WHITE = '\033[47m'
     BG_BLACK = '\033[40m'
+    CLEAR_SCREEN = '\033[2J\033[H'
 
 # Card suit symbols
 SUIT_SYMBOLS = {
@@ -56,15 +65,28 @@ class TerminalUI:
     def __init__(self, player_name: str):
         self.player_name = player_name
 
-    def render(self, game_state: dict, player_hand=None) -> str:
+    def render(self, game_state: dict, player_hand=None, action_history=None, show_all_hands=False) -> str:
+        """Render the current game state as a colorized string with optional action history and all hands."""
         out = []
         
-        # Header with pot
-        pot = game_state.get('pot', 0)
-        out.append(f"{Colors.BOLD}{Colors.YELLOW}💰 POT: ${pot}{Colors.RESET}")
+        # Clear screen and show header
+        out.append(Colors.CLEAR_SCREEN)
+        out.append(f"{Colors.BOLD}{Colors.YELLOW}🎰 POKER-OVER-SSH 🎰{Colors.RESET}")
         out.append("")
         
-        # Show player's private cards if provided
+        # Pot
+        pot = game_state.get('pot', 0)
+        out.append(f"{Colors.BOLD}{Colors.GREEN}💰 POT: ${pot}{Colors.RESET}")
+        out.append("")
+        
+        # Show action history if provided
+        if action_history:
+            out.append(f"{Colors.BOLD}{Colors.CYAN}📝 Recent Actions:{Colors.RESET}")
+            for action in action_history[-5:]:  # Show last 5 actions
+                out.append(f"   {Colors.DIM}• {action}{Colors.RESET}")
+            out.append("")
+        
+        # Player's hand (if provided)
         if player_hand:
             hand_cards = " ".join(card_str(c) for c in player_hand)
             out.append(f"{Colors.BOLD}{Colors.CYAN}🂠 Your Hand:{Colors.RESET}")
@@ -80,6 +102,17 @@ class TerminalUI:
         else:
             out.append(f"   {Colors.DIM}(none dealt yet){Colors.RESET}")
         out.append("")
+        
+        # Show all hands if requested (at end of round)
+        if show_all_hands:
+            all_hands = game_state.get('all_hands', {})
+            if all_hands:
+                out.append(f"{Colors.BOLD}{Colors.MAGENTA}🎴 All Players' Hands:{Colors.RESET}")
+                for player_name, hand in all_hands.items():
+                    hand_cards = " ".join(card_str(c) for c in hand)
+                    indicator = "👤" if player_name == self.player_name else "🎭"
+                    out.append(f"   {indicator} {Colors.BOLD}{player_name}{Colors.RESET}: {hand_cards}")
+                out.append("")
             
         # Players table
         out.append(f"{Colors.BOLD}{Colors.MAGENTA}👥 Players:{Colors.RESET}")

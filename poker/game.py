@@ -19,6 +19,7 @@ Contract (short):
 
 from __future__ import annotations
 
+import asyncio
 import random
 import itertools
 from typing import List, Tuple, Dict, Any
@@ -150,6 +151,7 @@ class Game:
         self.pot = 0
         self.community: List[Card] = []
         self.bets: Dict[str, int] = {}
+        self.action_history: List[str] = []
 
     def _reset_round(self):
         self.deck = make_deck()
@@ -157,6 +159,7 @@ class Game:
         self.pot = 0
         self.community = []
         self.bets = {p.name: 0 for p in self.players}
+        self.action_history = []
         for p in self.players:
             p.hand = []
             p.state = 'active'
@@ -196,6 +199,7 @@ class Game:
             if p.state != 'active':
                 continue
             try:
+                # Pass the current game state to the player
                 act = await p.take_action(self._public_state())
             except NotImplementedError:
                 # default to call/check
@@ -203,6 +207,7 @@ class Game:
             except Exception:
                 # on any actor error, fold the player
                 p.state = 'folded'
+                self.action_history.append(f"{p.name} folded (connection error)")
                 continue
 
             a = act.get('action')
@@ -210,6 +215,7 @@ class Game:
             
             if a == 'fold':
                 p.state = 'folded'
+                self.action_history.append(f"{p.name} folded")
             elif a == 'call':
                 # Call the current bet
                 call_amount = max(current_bet - self.bets[p.name], 0)
@@ -217,6 +223,10 @@ class Game:
                 p.chips -= pay
                 self.bets[p.name] += pay
                 self.pot += pay
+                if call_amount > 0:
+                    self.action_history.append(f"{p.name} called ${call_amount}")
+                else:
+                    self.action_history.append(f"{p.name} checked")
                 if p.chips == 0:
                     p.state = 'all-in'
             elif a == 'check':
@@ -228,20 +238,42 @@ class Game:
                     p.chips -= pay
                     self.bets[p.name] += pay
                     self.pot += pay
+                    self.action_history.append(f"{p.name} called ${call_amount} (forced)")
                     if p.chips == 0:
                         p.state = 'all-in'
+                else:
+                    self.action_history.append(f"{p.name} checked")
             elif a == 'bet':
                 # Bet the specified amount (must be at least current bet)
-                total_bet = max(amt, current_bet)
-                bet_amount = total_bet - self.bets[p.name]
-                pay = min(bet_amount, p.chips)
-                p.chips -= pay
-                self.bets[p.name] += pay
-                self.pot += pay
-                current_bet = max(current_bet, self.bets[p.name])
-                if p.chips == 0:
-                    p.state = 'all-in'
+                if amt <= 0:
+                    # Invalid bet amount, treat as check
+                    if current_bet > self.bets[p.name]:
+                        call_amount = current_bet - self.bets[p.name]
+                        pay = min(call_amount, p.chips)
+                        p.chips -= pay
+                        self.bets[p.name] += pay
+                        self.pot += pay
+                        self.action_history.append(f"{p.name} called ${call_amount}")
+                    else:
+                        self.action_history.append(f"{p.name} checked")
+                else:
+                    # Valid bet - amt is the total amount they want to bet
+                    bet_amount = amt - self.bets[p.name]
+                    pay = min(bet_amount, p.chips)
+                    p.chips -= pay
+                    self.bets[p.name] += pay
+                    self.pot += pay
+                    current_bet = max(current_bet, self.bets[p.name])
+                    self.action_history.append(f"{p.name} bet ${amt}")
+                    if p.chips == 0:
+                        p.state = 'all-in'
             # other actions ignored for now
+            
+            # Update current_bet after each action for next player
+            current_bet = max(self.bets.values()) if self.bets else 0
+            
+            # Small delay to ensure action is processed
+            await asyncio.sleep(0.1)
 
     def evaluate_hands(self) -> Dict[str, Any]:
         """Evaluate active (non-folded) players and determine winners.
@@ -262,15 +294,21 @@ class Game:
             elif val == best_val:
                 winners.append(p.name)
 
-        return {'winners': winners, 'pot': self.pot, 'hands': results}
+        return {'winners': winners, 'pot': self.pot, 'hands': results, 'all_hands': {p.name: p.hand for p in self.players}}
 
-    def _public_state(self) -> Dict[str, Any]:
-        return {
+    def _public_state(self, include_all_hands=False) -> Dict[str, Any]:
+        state = {
             'community': list(self.community),
             'bets': dict(self.bets),
             'pot': self.pot,
             'players': [(p.name, p.chips, p.state) for p in self.players],
+            'action_history': list(self.action_history),
         }
+        
+        if include_all_hands:
+            state['all_hands'] = {p.name: p.hand for p in self.players}
+            
+        return state
 
     async def start_round(self) -> Dict[str, Any]:
         """Play a single round from shuffle to showdown (no side-pot handling).
