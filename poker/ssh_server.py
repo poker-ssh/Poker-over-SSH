@@ -315,7 +315,8 @@ class ServerState:
                 ui = TerminalUI(player.name)
                 
                 # show public state and player's private hand
-                view = ui.render(game_state, player_hand=player.hand)
+                action_history = game_state.get('action_history', [])
+                view = ui.render(game_state, player_hand=player.hand, action_history=action_history)
                 
                 # Check if session is still connected
                 if session._stdout.is_closing():
@@ -391,7 +392,8 @@ class ServerState:
                 ui = TerminalUI(session_player.name)
                 
                 # Show game state with waiting indicator
-                view = ui.render(game_state, player_hand=session_player.hand)
+                action_history = game_state.get('action_history', [])
+                view = ui.render(game_state, player_hand=session_player.hand, action_history=action_history)
                 session._stdout.write(view + "\r\n")
                 
                 # Show waiting message if it's not this player's turn

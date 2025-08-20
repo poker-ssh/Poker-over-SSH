@@ -15,6 +15,8 @@ Contract (short):
 - Game(players) expects a list of Player objects from `poker.player`.
 - Call `start_round()` to play a single round; it returns a dict with
   results including winners and final pot.
+
+This is made with help by GitHub Copilot
 """
 
 from __future__ import annotations
