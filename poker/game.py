@@ -313,12 +313,14 @@ class Game:
                         self.pot += pay
                         action_msg = f"{p.name} bet ${amt}"
                         self.action_history.append(action_msg)
+                        print(f"DEBUG: Recording bet action: {action_msg}, pot now: {self.pot}, player bet: {self.bets[p.name]}")
                         if p.chips == 0:
                             p.state = 'all-in'
             # other actions ignored for now
             
             # Small delay to ensure action is processed
             await asyncio.sleep(0.1)
+            print(f"DEBUG: After {p.name}'s turn - Action history: {self.action_history[-3:] if len(self.action_history) >= 3 else self.action_history}")
 
     def evaluate_hands(self) -> Dict[str, Any]:
         """Evaluate active (non-folded) players and determine winners.
