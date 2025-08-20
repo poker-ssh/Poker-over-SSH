@@ -10,7 +10,6 @@ This module provides a small demo server that registers players via the
 import asyncio
 import logging
 from typing import Optional, Dict, Any
-from poker.terminal_ui import Colors
 
 
 try:
@@ -155,7 +154,6 @@ class _SimpleSessionBase:
                 self._stdout.write("  help     Show this help\r\n")
                 self._stdout.write("  whoami   Show connection info\r\n")
                 self._stdout.write("  seat     Claim a seat: 'seat <name>'\r\n")
-                self._stdout.write("  players  List all players\r\n")
                 self._stdout.write("  start    Start a poker round (requires 2+ players)\r\n")
                 self._stdout.write("  quit     Disconnect\r\n")
                 self._stdout.write("\r\n❯ ")
@@ -170,29 +168,6 @@ class _SimpleSessionBase:
                 await self._stdout.drain()
             except Exception:
                 pass
-            return
-
-        if cmd.lower() == "players":
-            if self._server_state is not None:
-                try:
-                    players = self._server_state.pm.players
-                    if not players:
-                        self._stdout.write("No players registered\r\n\r\n❯ ")
-                    else:
-                        self._stdout.write("🎭 Registered Players:\r\n")
-                        for i, p in enumerate(players, 1):
-                            status = "💚 online" if any(session for session, player in self._server_state.session_map.items() if player == p) else "💔 offline"
-                            self._stdout.write(f"  {i}. {p.name} - ${p.chips} - {status}\r\n")
-                        self._stdout.write("\r\n❯ ")
-                    await self._stdout.drain()
-                except Exception:
-                    pass
-            else:
-                try:
-                    self._stdout.write("Server state not available\r\n\r\n❯ ")
-                    await self._stdout.drain()
-                except Exception:
-                    pass
             return
 
         # seat <name> registers player with the server_state
@@ -225,12 +200,12 @@ class _SimpleSessionBase:
         if cmd.lower() == "start":
             if self._server_state is not None:
                 try:
-                    result = await self._server_state.start_game_round()
-                    # Check if game was already in progress
-                    if isinstance(result, dict) and result.get("error"):
-                        self._stdout.write(f"⚠️  {result['error']}\r\n\r\n❯ ")
+                    await self._server_state.start_game_round()
+                    try:
+                        self._stdout.write("Game round started!\r\n\r\n❯ ")
                         await self._stdout.drain()
-                    # Don't write anything else here - results are broadcasted by start_game_round
+                    except Exception:
+                        pass
                 except Exception as e:
                     try:
                         self._stdout.write(f"Failed to start game: {e}\r\n\r\n❯ ")
@@ -291,8 +266,6 @@ class ServerState:
         self.pm = PlayerManager()
         # map session -> player
         self.session_map: Dict[Any, Any] = {}
-        self.game_in_progress = False
-        self._game_lock = asyncio.Lock()
 
     def register_player_for_session(self, name: str, session):
         existing = next((p for p in self.pm.players if p.name == name), None)
@@ -305,60 +278,21 @@ class ServerState:
 
         async def actor(game_state: Dict[str, Any]):
             try:
-                # First, broadcast waiting status to all other players
-                current_player = game_state.get('current_player')
-                if current_player == player.name:
-                    # Broadcast to others that they're waiting for this player
-                    await self.broadcast_waiting_status(player.name, game_state)
-                
                 from poker.terminal_ui import TerminalUI
                 ui = TerminalUI(player.name)
-                
-                # show public state and player's private hand
-                action_history = game_state.get('action_history', [])
-                view = ui.render(game_state, player_hand=player.hand, action_history=action_history)
-                
-                # Check if session is still connected
-                if session._stdout.is_closing():
-                    return {'action': 'fold', 'amount': 0}
-                    
+                # show public state and prompt
+                view = ui.render(game_state)
                 session._stdout.write(view + "\r\n")
-                
-                # Better prompt with options
-                current_bet = max(game_state.get('bets', {}).values()) if game_state.get('bets') else 0
-                player_bet = game_state.get('bets', {}).get(player.name, 0)
-                to_call = current_bet - player_bet
-                
-                if to_call > 0:
-                    session._stdout.write(f"💭 Your turn! (fold, call ${to_call}, or bet <amount>): ")
-                else:
-                    session._stdout.write("💭 Your turn! (fold, check, or bet <amount>): ")
+                session._stdout.write("Action (fold/call/check/bet <amt>): ")
                 await session._stdout.drain()
-                
-                # read a full line from the session stdin with timeout
-                try:
-                    line = await asyncio.wait_for(session._stdin.readline(), timeout=30.0)
-                except asyncio.TimeoutError:
-                    # Auto-fold on timeout
-                    return {'action': 'fold', 'amount': 0}
-                    
+                # read a full line from the session stdin
+                line = await session._stdin.readline()
                 if isinstance(line, bytes):
                     line = line.decode('utf-8', errors='ignore')
                 line = (line or "").strip()
-                
                 if not line:
-                    # Default to check if no bet to call, otherwise call
-                    current_bet = max(game_state.get('bets', {}).values()) if game_state.get('bets') else 0
-                    player_bet = game_state.get('bets', {}).get(player.name, 0)
-                    if current_bet > player_bet:
-                        return {'action': 'call', 'amount': 0}
-                    else:
-                        return {'action': 'check', 'amount': 0}
-                        
-                parts = line.split()
-                if not parts:
                     return {'action': 'check', 'amount': 0}
-                    
+                parts = line.split()
                 cmd = parts[0].lower()
                 if cmd in ('fold', 'f'):
                     return {'action': 'fold', 'amount': 0}
@@ -374,168 +308,36 @@ class ServerState:
                     return {'action': 'bet', 'amount': amt}
                 return {'action': 'call', 'amount': 0}
             except Exception:
-                # If any error occurs, fold to keep the game going
                 return {'action': 'fold', 'amount': 0}
 
         # assign actor to player
         player.actor = actor
         return player
 
-    async def broadcast_waiting_status(self, current_player_name: str, game_state: Dict[str, Any]):
-        """Broadcast the current game state to all players showing who they're waiting for."""
-        for session, session_player in list(self.session_map.items()):
-            try:
-                if session._stdout.is_closing():
-                    continue
-                
-                from poker.terminal_ui import TerminalUI
-                ui = TerminalUI(session_player.name)
-                
-                # Show game state with waiting indicator
-                action_history = game_state.get('action_history', [])
-                view = ui.render(game_state, player_hand=session_player.hand, action_history=action_history)
-                session._stdout.write(view + "\r\n")
-                
-                # Show waiting message if it's not this player's turn
-                if session_player.name != current_player_name:
-                    if current_player_name:
-                        current_player_obj = next((p for p in self.pm.players if p.name == current_player_name), None)
-                        if current_player_obj and current_player_obj.is_ai:
-                            session._stdout.write(f"⏳ Waiting for {Colors.CYAN}🤖 {current_player_name}{Colors.RESET} (AI is thinking...)\r\n")
-                        else:
-                            session._stdout.write(f"⏳ Waiting for {Colors.CYAN}👤 {current_player_name}{Colors.RESET} to make their move...\r\n")
-                    else:
-                        session._stdout.write(f"⏳ Waiting for game to continue...\r\n")
-                else:
-                    # It's this player's turn - they'll see the action prompt from their actor
-                    pass
-                    
-                await session._stdout.drain()
-            except Exception:
-                # Skip if connection is closed
-                if session in self.session_map:
-                    del self.session_map[session]
-
     async def start_game_round(self):
         """Manually start a single game round if there are enough players."""
-        async with self._game_lock:
-            if self.game_in_progress:
-                return {"error": "Game already in progress"}
-                
-            # Get current human players
-            human_players = [p for p in self.pm.players if not p.is_ai]
-            if len(human_players) < 1:
-                raise Exception("Need at least 1 human player to start a game")
-            
-            # Add AI players to reach minimum of 4 total players
-            total_players = list(self.pm.players)
-            min_players = 4
-            current_count = len(total_players)
-            
-            if current_count < min_players:
-                ai_names = ["AI_Alice", "AI_Bob", "AI_Charlie", "AI_David", "AI_Eve"]
-                existing_ai_names = {p.name for p in total_players if p.is_ai}
-                
-                for i in range(min_players - current_count):
-                    # find unused AI name
-                    ai_name = next((name for name in ai_names if name not in existing_ai_names), f"AI_Player_{i+1}")
-                    existing_ai_names.add(ai_name)
-                    
-                    # Create AI player
-                    ai_player = self.pm.register_player(ai_name, is_ai=True, chips=200)
-                    
-                    # Set up AI actor
-                    from poker.ai import PokerAI
-                    ai = PokerAI(ai_player)
-                    ai_player.actor = ai.decide_action
-                    
-            players = list(self.pm.players)
-            self.game_in_progress = True
+        players = list(self.pm.players)
+        if len(players) < 2:
+            raise Exception("Need at least 2 players to start a game")
+
+        from poker.game import Game
+        game = Game(players)
+        result = await game.start_round()
+
+        # broadcast results to sessions
+        for session, player in list(self.session_map.items()):
             try:
-                from poker.game import Game
-                game = Game(players)
-                result = await game.start_round()
+                session._stdout.write("Round finished\r\n")
+                hands = result.get('hands') if isinstance(result, dict) else None
+                if hands:
+                    for pname, handval in hands.items():
+                        session._stdout.write(f"{pname}: {handval}\r\n")
+                session._stdout.write("\r\n")
+                await session._stdout.drain()
+            except Exception:
+                pass
 
-                # broadcast results to sessions
-                for session, player in list(self.session_map.items()):
-                    try:
-                        # Check if session is still connected
-                        if session._stdout.is_closing():
-                            continue
-                        
-                        # Create a final game state with all hands visible
-                        from poker.terminal_ui import TerminalUI
-                        ui = TerminalUI(player.name)
-                        
-                        # Create final state with all hands
-                        final_state = {
-                            'community': game.community,
-                            'bets': game.bets,
-                            'pot': result.get('pot', 0),
-                            'players': [(p.name, p.chips, p.state) for p in players],
-                            'action_history': game.action_history,
-                            'all_hands': result.get('all_hands', {})
-                        }
-                        
-                        # Render final view with all hands shown
-                        final_view = ui.render(final_state, player_hand=player.hand, 
-                                             action_history=game.action_history, show_all_hands=True)
-                        session._stdout.write(final_view + "\r\n")
-                            
-                        session._stdout.write(f"\r\n🏆 {Colors.BOLD}{Colors.YELLOW}=== ROUND RESULTS ==={Colors.RESET}\r\n")
-                        session._stdout.write(f"💰 Final Pot: {Colors.GREEN}${result.get('pot', 0)}{Colors.RESET}\r\n")
-                        winners = result.get('winners', [])
-                        pot = result.get('pot', 0)
-                        
-                        if len(winners) == 1:
-                            winnings = pot
-                            session._stdout.write(f"🎉 Winner: {Colors.BOLD}{Colors.GREEN}{winners[0]}{Colors.RESET} wins {Colors.YELLOW}${winnings}{Colors.RESET}!\r\n")
-                        else:
-                            winnings_per_player = pot // len(winners)
-                            session._stdout.write(f"🤝 Tie between: {Colors.BOLD}{Colors.GREEN}{', '.join(winners)}{Colors.RESET}\r\n")
-                            session._stdout.write(f"💰 Each winner gets: {Colors.YELLOW}${winnings_per_player}{Colors.RESET}\r\n")
-                        
-                        session._stdout.write("\r\n🃏 Final hands:\r\n")
-                        hands = result.get('hands') if isinstance(result, dict) else None
-                        all_hands = result.get('all_hands', {})
-                        
-                        if hands:
-                            for pname, handval in hands.items():
-                                hand_rank, tiebreakers = handval
-                                rank_names = {0: 'High Card', 1: 'Pair', 2: 'Two Pair', 3: 'Three of a Kind', 
-                                             4: 'Straight', 5: 'Flush', 6: 'Full House', 7: 'Four of a Kind', 
-                                             8: 'Straight Flush'}
-                                rank_name = rank_names.get(hand_rank, f"Rank {hand_rank}")
-                                winner_mark = "👑" if pname in winners else "  "
-                                
-                                # Find player's current chip count
-                                player_obj = next((p for p in list(self.pm.players) if p.name == pname), None)
-                                chip_count = f"${player_obj.chips}" if player_obj else "N/A"
-                                
-                                # Show hand cards if available
-                                player_cards = all_hands.get(pname, [])
-                                if player_cards:
-                                    from poker.terminal_ui import card_str
-                                    cards_display = "  ".join(card_str(card) for card in player_cards)
-                                    session._stdout.write(f"{winner_mark} {pname}: {Colors.CYAN}{rank_name}{Colors.RESET} - {cards_display} - {Colors.GREEN}{chip_count}{Colors.RESET}\r\n")
-                                else:
-                                    session._stdout.write(f"{winner_mark} {pname}: {Colors.CYAN}{rank_name}{Colors.RESET} - {Colors.GREEN}{chip_count}{Colors.RESET}\r\n")
-                        
-                        session._stdout.write(f"{Colors.YELLOW}{'='*30}{Colors.RESET}\r\n\r\n❯ ")
-                        await session._stdout.drain()
-                    except Exception as e:
-                        # Fallback to simple display or skip if connection is closed
-                        try:
-                            session._stdout.write(f"Round finished. Winners: {', '.join(result.get('winners', []))}\r\n❯ ")
-                            await session._stdout.drain()
-                        except Exception:
-                            # Connection is likely closed, remove from session map
-                            if session in self.session_map:
-                                del self.session_map[session]
-
-                return result
-            finally:
-                self.game_in_progress = False
+        return result
 
 
 class SSHServer:
@@ -578,9 +380,6 @@ class SSHServer:
 
         # build server state
         self._server_state = ServerState()
-        
-        # Clear any existing players from previous runs
-        self._server_state.pm.players.clear()
 
         def session_factory(stdin, stdout, stderr, **kwargs):
             return _SimpleSession(stdin, stdout, stderr, server_state=self._server_state)
