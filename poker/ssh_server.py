@@ -14,12 +14,10 @@ except Exception:  # pragma: no cover - runtime dependency
     asyncssh = None
 
 
-class _SimpleSession:
-    """Minimal interactive session that works with asyncssh streams."""
-
+class _SimpleSessionBase:
     def __init__(self, stdin, stdout, stderr):
         self._stdin = stdin
-        self._stdout = stdout  
+        self._stdout = stdout
         self._stderr = stderr
         self._input_buffer = ""
         self._running = True
@@ -30,7 +28,7 @@ class _SimpleSession:
         # Send welcome message immediately
         self._stdout.write("Welcome to Poker-over-SSH (demo)\r\n")
         self._stdout.write("Type 'help' for commands.\r\n")
-        self._stdout.write("> ")
+        self._stdout.write("❯ ")
 
         # Start the input reading task
         self._reader_task = asyncio.create_task(self._read_input())
@@ -93,7 +91,9 @@ class _SimpleSession:
                 self._input_buffer = self._input_buffer[:-1]
                 self._stdout.write("\x08 \x08")
         elif char == '\x03':  # Ctrl+C  
-            self._stdout.write("^C\r\n> ")
+            # If the client sends a literal Ctrl-C byte (no pty signal),
+            # treat it like an interrupt: clear input and reprint prompt.
+            self._stdout.write("^C\r\n❯ ")
             self._input_buffer = ""
             try:
                 await self._stdout.drain()
@@ -111,11 +111,37 @@ class _SimpleSession:
         elif ord(char) >= 32 and ord(char) < 127:  # Printable
             self._input_buffer += char
             self._stdout.write(char)  # Echo
-                
+
+    # asyncssh will call this when the client sends a signal (e.g. from a pty)
+    # needed otherwise ctrl-c will close the connection to server
+    def signal_received(self, signame):
+        """Handle signals sent by the client (PTY)."""
+        # Only handle SIGINT (Ctrl-C)
+        try:
+            if signame in ("INT", "SIGINT"):
+                # Write ^C and reset the input buffer. Use create_task to avoid
+                # blocking the signal handler; _stdout.drain is async.
+                self._input_buffer = ""
+                try:
+                    # stdout.write is synchronous; schedule a drain if possible
+                    self._stdout.write("^C\r\n❯ ")
+                    try:
+                        asyncio.create_task(self._stdout.drain())
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+                # Returning True indicates we've handled the signal.
+                return True
+        except Exception:
+            pass
+        # Return False/None to allow default handling
+        return False
+
     async def _process_command(self, cmd):
         """Process a command"""
         if not cmd:
-            self._stdout.write("> ")
+            self._stdout.write("❯ ")
             try:
                 await self._stdout.drain()
             except Exception:
@@ -138,7 +164,7 @@ class _SimpleSession:
             self._stdout.write("  whoami   Show connection info\r\n")
             self._stdout.write("  seat     (demo) claim a seat\r\n")
             self._stdout.write("  quit     Disconnect\r\n")
-            self._stdout.write("> ")
+            self._stdout.write("❯ ")
             try:
                 await self._stdout.drain()
             except Exception:
@@ -147,7 +173,7 @@ class _SimpleSession:
             
         if cmd.lower() == "whoami":
             self._stdout.write("You are connected to Poker-over-SSH demo.\r\n")
-            self._stdout.write("> ")
+            self._stdout.write("❯ ")
             try:
                 await self._stdout.drain()
             except Exception:
@@ -155,8 +181,8 @@ class _SimpleSession:
             return
             
         if cmd.lower() == "seat":
-            self._stdout.write("Seat claimed (demo). In a full server this would register you.\r\n")
-            self._stdout.write("> ")
+            self._stdout.write("Seat claimed (demo). In a PROPER server this would register you.\r\n")
+            self._stdout.write("❯ ")
             try:
                 await self._stdout.drain()
             except Exception:
@@ -165,7 +191,7 @@ class _SimpleSession:
             
         # Unknown command
         self._stdout.write(f"Unknown command: {cmd}\r\n")
-        self._stdout.write("> ")
+        self._stdout.write("❯ ")
         # Ensure output is flushed immediately
         try:
             await self._stdout.drain()
@@ -174,6 +200,11 @@ class _SimpleSession:
 
 
 if asyncssh:
+    # Create an asyncssh-aware session class that also implements
+    # SSHServerSession so asyncssh will call signal_received for pty signals.
+    class _SimpleSession(_SimpleSessionBase, asyncssh.SSHServerSession):
+        pass
+
     class _SimpleServer(asyncssh.SSHServer):
         """Simple SSH server that accepts any connection without authentication."""
         
@@ -198,6 +229,7 @@ if asyncssh:
             return ""  # Empty string means no auth required
 else:
     # Create a dummy class for type checking when asyncssh is not available
+    _SimpleSession = _SimpleSessionBase
     _SimpleServer = object  # type: ignore
 
 
