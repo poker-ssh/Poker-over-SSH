@@ -19,7 +19,17 @@ class PokerAI:
         
         # game_state contains 'community', 'pot', 'bets', 'players'
         community = game_state.get('community', [])
+        bets = game_state.get('bets', {})
         chips = self.player.chips
+        
+        # Calculate how much we need to call
+        current_bet = max(bets.values()) if bets else 0
+        my_bet = bets.get(self.player.name, 0)
+        call_amount = max(current_bet - my_bet, 0)
+        
+        # If we don't have enough money to call, fold
+        if call_amount > chips:
+            return {'action': 'fold', 'amount': 0}
 
         # Very naive rules
         if not community:
