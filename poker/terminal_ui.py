@@ -66,6 +66,26 @@ class TerminalUI:
         out.append(f"{Colors.BOLD}{Colors.YELLOW}🎰 POKER-OVER-SSH 🎰{Colors.RESET}")
         out.append("")
         
+        # Current player indicator
+        current_player = game_state.get('current_player')
+        if current_player:
+            if current_player == self.player_name:
+                out.append(f"{Colors.BOLD}{Colors.GREEN}🎯 YOUR TURN{Colors.RESET}")
+            else:
+                # Find if current player is AI
+                players_data = game_state.get('players', [])
+                current_player_is_ai = False
+                for player_data in players_data:
+                    if len(player_data) >= 4 and player_data[0] == current_player:
+                        current_player_is_ai = player_data[3]
+                        break
+                
+                if current_player_is_ai:
+                    out.append(f"{Colors.BOLD}{Colors.CYAN}🤖 {current_player}'s turn (AI thinking...){Colors.RESET}")
+                else:
+                    out.append(f"{Colors.BOLD}{Colors.CYAN}👤 {current_player}'s turn{Colors.RESET}")
+        out.append("")
+        
         # Pot
         pot = game_state.get('pot', 0)
         out.append(f"{Colors.BOLD}{Colors.GREEN}💰 POT: ${pot}{Colors.RESET}")
@@ -108,9 +128,24 @@ class TerminalUI:
             
         # Players table
         out.append(f"{Colors.BOLD}{Colors.MAGENTA}👥 Players:{Colors.RESET}")
-        for n, chips, state in game_state.get('players', []):
+        for player_data in game_state.get('players', []):
+            if len(player_data) == 4:
+                n, chips, state, is_ai = player_data
+            else:
+                # Backwards compatibility
+                n, chips, state = player_data
+                is_ai = False
+                
             status_color = Colors.GREEN if state == 'active' else Colors.RED if state == 'folded' else Colors.YELLOW
-            player_indicator = "👤" if n == self.player_name else "🎭"
+            
+            # Different icons for different player types
+            if n == self.player_name:
+                player_indicator = "👤"  # Current human player
+            elif is_ai:
+                player_indicator = "🤖"  # AI player
+            else:
+                player_indicator = "🎭"  # Other human player
+                
             out.append(f"   {player_indicator} {Colors.BOLD}{n}{Colors.RESET}: {status_color}${chips} ({state}){Colors.RESET}")
         
         out.append("")

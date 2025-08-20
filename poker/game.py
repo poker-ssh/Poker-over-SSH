@@ -202,8 +202,8 @@ class Game:
             current_bet = max(self.bets.values()) if self.bets else 0
             
             try:
-                # Pass the current game state to the player
-                act = await p.take_action(self._public_state())
+                # Pass the current game state to the player with current player info
+                act = await p.take_action(self._public_state(current_player_name=p.name))
             except NotImplementedError:
                 # default to call/check
                 act = {'action': 'call', 'amount': current_bet}
@@ -312,13 +312,14 @@ class Game:
 
         return {'winners': winners, 'pot': self.pot, 'hands': results, 'all_hands': {p.name: p.hand for p in self.players}}
 
-    def _public_state(self, include_all_hands=False) -> Dict[str, Any]:
+    def _public_state(self, include_all_hands=False, current_player_name=None) -> Dict[str, Any]:
         state = {
             'community': list(self.community),
             'bets': dict(self.bets),
             'pot': self.pot,
-            'players': [(p.name, p.chips, p.state) for p in self.players],
+            'players': [(p.name, p.chips, p.state, p.is_ai) for p in self.players],
             'action_history': list(self.action_history),
+            'current_player': current_player_name,
         }
         
         if include_all_hands:

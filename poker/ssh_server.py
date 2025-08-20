@@ -305,14 +305,17 @@ class ServerState:
 
         async def actor(game_state: Dict[str, Any]):
             try:
+                # First, broadcast waiting status to all other players
+                current_player = game_state.get('current_player')
+                if current_player == player.name:
+                    # Broadcast to others that they're waiting for this player
+                    await self.broadcast_waiting_status(player.name, game_state)
+                
                 from poker.terminal_ui import TerminalUI
                 ui = TerminalUI(player.name)
                 
-                # Get action history from game state
-                action_history = game_state.get('action_history', [])
-                
-                # show public state and player's private hand with action history
-                view = ui.render(game_state, player_hand=player.hand, action_history=action_history)
+                # show public state and player's private hand
+                view = ui.render(game_state, player_hand=player.hand)
                 
                 # Check if session is still connected
                 if session._stdout.is_closing():
@@ -377,6 +380,40 @@ class ServerState:
         player.actor = actor
         return player
 
+    async def broadcast_waiting_status(self, current_player_name: str, game_state: Dict[str, Any]):
+        """Broadcast the current game state to all players showing who they're waiting for."""
+        for session, session_player in list(self.session_map.items()):
+            try:
+                if session._stdout.is_closing():
+                    continue
+                
+                from poker.terminal_ui import TerminalUI
+                ui = TerminalUI(session_player.name)
+                
+                # Show game state with waiting indicator
+                view = ui.render(game_state, player_hand=session_player.hand)
+                session._stdout.write(view + "\r\n")
+                
+                # Show waiting message if it's not this player's turn
+                if session_player.name != current_player_name:
+                    if current_player_name:
+                        current_player_obj = next((p for p in self.pm.players if p.name == current_player_name), None)
+                        if current_player_obj and current_player_obj.is_ai:
+                            session._stdout.write(f"⏳ Waiting for {Colors.CYAN}🤖 {current_player_name}{Colors.RESET} (AI is thinking...)\r\n")
+                        else:
+                            session._stdout.write(f"⏳ Waiting for {Colors.CYAN}👤 {current_player_name}{Colors.RESET} to make their move...\r\n")
+                    else:
+                        session._stdout.write(f"⏳ Waiting for game to continue...\r\n")
+                else:
+                    # It's this player's turn - they'll see the action prompt from their actor
+                    pass
+                    
+                await session._stdout.drain()
+            except Exception:
+                # Skip if connection is closed
+                if session in self.session_map:
+                    del self.session_map[session]
+
     async def start_game_round(self):
         """Manually start a single game round if there are enough players."""
         async with self._game_lock:
@@ -394,17 +431,16 @@ class ServerState:
             current_count = len(total_players)
             
             if current_count < min_players:
-                # Add AI players
                 ai_names = ["AI_Alice", "AI_Bob", "AI_Charlie", "AI_David", "AI_Eve"]
                 existing_ai_names = {p.name for p in total_players if p.is_ai}
                 
                 for i in range(min_players - current_count):
-                    # Find an unused AI name
+                    # find unused AI name
                     ai_name = next((name for name in ai_names if name not in existing_ai_names), f"AI_Player_{i+1}")
                     existing_ai_names.add(ai_name)
                     
                     # Create AI player
-                    ai_player = self.pm.register_player(ai_name, is_ai=True, chips=1000)
+                    ai_player = self.pm.register_player(ai_name, is_ai=True, chips=200)
                     
                     # Set up AI actor
                     from poker.ai import PokerAI

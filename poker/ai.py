@@ -4,6 +4,8 @@ Simple Poker AI for demo purposes.
 This is intentionally simple and deterministic to help testing.
 """
 
+import asyncio
+import random
 from typing import Any, Dict
 
 
@@ -11,7 +13,10 @@ class PokerAI:
     def __init__(self, player):
         self.player = player
 
-    def decide_action(self, game_state: Dict[str, Any]) -> Dict[str, Any]:
+    async def decide_action(self, game_state: Dict[str, Any]) -> Dict[str, Any]:
+        # Add a small random delay to simulate thinking
+        await asyncio.sleep(random.uniform(0.5, 2.0))
+        
         # game_state contains 'community', 'pot', 'bets', 'players'
         community = game_state.get('community', [])
         chips = self.player.chips
