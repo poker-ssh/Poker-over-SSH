@@ -16,7 +16,7 @@ from typing import Any, Callable, List, Optional
 
 
 class Player:
-    def __init__(self, name: str, is_ai: bool = False, chips: int = 1000):
+    def __init__(self, name: str, is_ai: bool = False, chips: int = 200):
         self.name = name
         self.is_ai = is_ai
         self.chips = chips
@@ -43,7 +43,7 @@ class PlayerManager:
     def __init__(self):
         self.players: List[Player] = []
 
-    def register_player(self, name: str, is_ai: bool = False, chips: int = 1000) -> Player:
+    def register_player(self, name: str, is_ai: bool = False, chips: int = 200) -> Player:
         player = Player(name, is_ai, chips=chips)
         self.players.append(player)
         return player

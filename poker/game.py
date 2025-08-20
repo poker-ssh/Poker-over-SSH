@@ -279,6 +279,7 @@ class Game:
         """Evaluate active (non-folded) players and determine winners.
 
         Returns a dict with winners(list of player names), pot, and hand ranks.
+        Also distributes the pot money to the winners.
         """
         contenders = [p for p in self.players if p.state != 'folded']
         results = {}
@@ -293,6 +294,21 @@ class Game:
                 winners = [p.name]
             elif val == best_val:
                 winners.append(p.name)
+
+        # Distribute the pot money to the winners
+        if winners and self.pot > 0:
+            winnings_per_player = self.pot // len(winners)
+            remainder = self.pot % len(winners)
+            
+            for i, winner_name in enumerate(winners):
+                # Find the winner player object
+                winner_player = next((p for p in self.players if p.name == winner_name), None)
+                if winner_player:
+                    # Give each winner their share
+                    winner_player.chips += winnings_per_player
+                    # Give remainder to first winner(s) to avoid losing cents
+                    if i < remainder:
+                        winner_player.chips += 1
 
         return {'winners': winners, 'pot': self.pot, 'hands': results, 'all_hands': {p.name: p.hand for p in self.players}}
 

@@ -1,11 +1,7 @@
 """
 Simple Poker AI for demo purposes.
 
-The AI attempts a lightweight evaluation:
-- Preflop: basic playability based on pocket pair / high cards
-- Postflop: uses number of outs via pair/flush/straight hints
-
-This is intentionally simple and deterministic to aid testing.
+This is intentionally simple and deterministic to help testing.
 """
 
 from typing import Any, Dict

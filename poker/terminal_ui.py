@@ -1,13 +1,5 @@
 """
-Beautiful terminal UI renderer for Poker-over-SSH with colors and car        # Recent actions section
-        action_history = game_state.get('action_history', [])
-        if action_history:
-            output.append(f"{Colors.CYAN}📝 Recent Actions:{Colors.RESET}")
-            # Show last 4 actions to see more context
-            recent_actions = action_history[-4:]
-            for action in recent_actions:
-                output.append(f"   • {action}")
-        output.append("")ols.
+Beautiful terminal UI renderer for Poker-over-SSH with colours and cards(??)
 
 This keeps presentation logic out of the engine so SSH sessions can call
 `TerminalUI.render(game_state)` to get a colorized string to send to clients.
