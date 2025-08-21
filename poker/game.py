@@ -45,6 +45,11 @@ HAND_RANKS = {
 }
 
 
+def is_already_bet(amt: int, current_bet: int, player_current_bet: int) -> bool:
+    """Check if the player is trying to bet the same amount they already bet."""
+    return amt == player_current_bet
+
+
 def make_deck() -> List[Card]:
     ranks = list(range(2, 15))
     suits = list('cdhs')
