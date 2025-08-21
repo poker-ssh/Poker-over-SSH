@@ -214,7 +214,7 @@ class Game:
                     
                 # Check if player has no chips
                 if p.chips <= 0:
-                    if getattr(p, 'rebuys', 0) < 1:
+                    if p.rebuys < 1:
                         p.chips = 50  # Small rebuy amount
                         p.rebuys += 1
                         self.action_history.append(f"{p.name} received $50 rebuy (was broke, {p.rebuys}/1)")
