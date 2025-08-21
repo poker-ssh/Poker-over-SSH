@@ -187,11 +187,16 @@ class Game:
         self._draw(1)
         self.community.extend(self._draw(1))
 
-    async def betting_round(self):
+    async def betting_round(self, allow_checks: bool = True, min_bet: int = 0):
         """Proper poker betting round: continue until all active players have called or folded.
 
         Player.take_action is expected to return a dict like
         {'action': 'fold'|'call'|'check'|'bet', 'amount': int}
+
+        allow_checks: when False, players are not allowed to check when no bet
+                      has been made in the round (useful for pre-flop behavior
+                      if you want to force at least a small blind/ante-like bet).
+        min_bet: the minimum bet amount to enforce when current bet is 0.
         """
         
         # Get list of active players who can act
@@ -274,13 +279,22 @@ class Game:
                         self.action_history.append(f"{p.name} checked")
                         
                 elif a == 'check':
-                    # Only allowed if no bet to call
+                    # Checks may be disallowed (pre-flop) or only allowed when
+                    # there's no bet to call.
                     if current_bet > player_current_bet:
                         # Can't check when there's a bet to call - treat as fold
                         p.state = 'folded'
                         self.action_history.append(f"{p.name} folded (tried to check with bet to call)")
                     else:
-                        self.action_history.append(f"{p.name} checked")
+                        if not allow_checks:
+                            # If checks are not allowed and there's no current bet,
+                            # treat a check as a fold to enforce action (alternatively
+                            # you could force a min_bet or convert to a bet of min_bet).
+                            # We'll treat it as a fold to keep behavior explicit.
+                            p.state = 'folded'
+                            self.action_history.append(f"{p.name} folded (checks not allowed this round)")
+                        else:
+                            self.action_history.append(f"{p.name} checked")
                         
                 elif a == 'bet':
                     # Bet the specified amount (must be positive)
@@ -299,6 +313,16 @@ class Game:
                         # Valid bet amount - determine if it's a valid raise
                         if current_bet == 0:
                             # No one has bet yet - any positive amount is valid
+                            # Enforce min_bet if provided
+                            if min_bet > 0 and amt < min_bet:
+                                # Treat as invalid/too small bet -> check/fold depending
+                                if not allow_checks:
+                                    p.state = 'folded'
+                                    self.action_history.append(f"{p.name} folded (bet ${amt} < min ${min_bet})")
+                                    continue
+                                else:
+                                    self.action_history.append(f"{p.name} checked (bet ${amt} < min ${min_bet})")
+                                    continue
                             bet_amount = amt - player_current_bet
                             pay = min(bet_amount, p.chips)
                             p.chips -= pay
@@ -401,8 +425,8 @@ class Game:
         self._reset_round()
         self.deal_hole()
 
-        # pre-flop betting
-        await self.betting_round()
+        # pre-flop betting - disallow checks (force action / simulate small blind behavior)
+        await self.betting_round(allow_checks=False, min_bet=1)
 
         # flop
         self.deal_flop()
