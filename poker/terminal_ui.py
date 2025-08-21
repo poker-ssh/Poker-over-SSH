@@ -86,9 +86,23 @@ class TerminalUI:
                     out.append(f"{Colors.BOLD}{Colors.CYAN}👤 {current_player}'s turn{Colors.RESET}")
         out.append("")
         
-        # Pot
+        # Pot and betting info
         pot = game_state.get('pot', 0)
         out.append(f"{Colors.BOLD}{Colors.GREEN}💰 POT: ${pot}{Colors.RESET}")
+        
+        # Show current betting round info
+        bets = game_state.get('bets', {})
+        if bets:
+            current_bet = max(bets.values())
+            if current_bet > 0:
+                out.append(f"{Colors.BOLD}{Colors.CYAN}🎲 Current Bet: ${current_bet}{Colors.RESET}")
+                # Show who made the bet
+                for player_name, bet_amount in bets.items():
+                    if bet_amount == current_bet and bet_amount > 0:
+                        out.append(f"   {Colors.DIM}(set by {player_name}){Colors.RESET}")
+                last_bettor = game_state.get('last_bettor')
+                if last_bettor:
+                    out.append(f"   {Colors.DIM}(set by {last_bettor}){Colors.RESET}")
         out.append("")
         
         # Show action history if provided
@@ -105,14 +119,28 @@ class TerminalUI:
             out.append(f"   {hand_cards}")
             out.append("")
         
-        # Community cards
+        # Community cards with phase indicator
         community_cards = game_state.get('community', [])
-        out.append(f"{Colors.BOLD}{Colors.GREEN}🃏 Community Cards:{Colors.RESET}")
+        num_community = len(community_cards)
+        
+        # Determine phase
+        if num_community == 0:
+            phase = f"{Colors.YELLOW}Pre-Flop{Colors.RESET}"
+        elif num_community == 3:
+            phase = f"{Colors.CYAN}Flop{Colors.RESET}"
+        elif num_community == 4:
+            phase = f"{Colors.MAGENTA}Turn{Colors.RESET}"
+        elif num_community == 5:
+            phase = f"{Colors.RED}River{Colors.RESET}"
+        else:
+            phase = f"{Colors.WHITE}Unknown{Colors.RESET}"
+            
+        out.append(f"{Colors.BOLD}{Colors.GREEN}🃏 Community Cards ({phase}):{Colors.RESET}")
         if community_cards:
             community_str = " ".join(card_str(c) for c in community_cards)
             out.append(f"   {community_str}")
         else:
-            out.append(f"   {Colors.DIM}(none dealt yet){Colors.RESET}")
+            out.append(f"   {Colors.DIM}(none dealt yet - betting blind){Colors.RESET}")
         out.append("")
         
         # Show all hands if requested (at end of round)
@@ -126,8 +154,9 @@ class TerminalUI:
                     out.append(f"   {indicator} {Colors.BOLD}{player_name}{Colors.RESET}: {hand_cards}")
                 out.append("")
             
-        # Players table
+        # Players table with betting info
         out.append(f"{Colors.BOLD}{Colors.MAGENTA}👥 Players:{Colors.RESET}")
+        bets = game_state.get('bets', {})
         for player_data in game_state.get('players', []):
             if len(player_data) == 4:
                 n, chips, state, is_ai = player_data
@@ -145,8 +174,12 @@ class TerminalUI:
                 player_indicator = "🤖"  # AI player
             else:
                 player_indicator = "🎭"  # Other human player
-                
-            out.append(f"   {player_indicator} {Colors.BOLD}{n}{Colors.RESET}: {status_color}${chips} ({state}){Colors.RESET}")
+            
+            # Show current bet for this player
+            player_bet = bets.get(n, 0)
+            bet_info = f" [bet: ${player_bet}]" if player_bet > 0 else ""
+            
+            out.append(f"   {player_indicator} {Colors.BOLD}{n}{Colors.RESET}: {status_color}${chips} ({state}){Colors.RESET}{Colors.DIM}{bet_info}{Colors.RESET}")
         
         out.append("")
         out.append(f"{Colors.BOLD}{Colors.BLUE}{'='*50}{Colors.RESET}")

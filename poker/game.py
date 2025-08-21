@@ -282,17 +282,35 @@ class Game:
                     # Checks may be disallowed (pre-flop) or only allowed when
                     # there's no bet to call.
                     if current_bet > player_current_bet:
-                        # Can't check when there's a bet to call - treat as fold
-                        p.state = 'folded'
-                        self.action_history.append(f"{p.name} folded (tried to check with bet to call)")
+                        # Can't check when there's a bet to call - this should be caught at input level
+                        # For safety, convert to a call
+                        call_amount = current_bet - player_current_bet
+                        pay = min(call_amount, p.chips)
+                        p.chips -= pay
+                        self.bets[p.name] += pay
+                        self.pot += pay
+                        self.action_history.append(f"{p.name} called ${call_amount} (check converted to call)")
+                        if p.chips == 0:
+                            p.state = 'all-in'
                     else:
                         if not allow_checks:
-                            # If checks are not allowed and there's no current bet,
-                            # treat a check as a fold to enforce action (alternatively
-                            # you could force a min_bet or convert to a bet of min_bet).
-                            # We'll treat it as a fold to keep behavior explicit.
-                            p.state = 'folded'
-                            self.action_history.append(f"{p.name} folded (checks not allowed this round)")
+                            # Convert invalid check to minimum bet instead of folding
+                            if min_bet > 0:
+                                bet_amount = min_bet - player_current_bet
+                                pay = min(bet_amount, p.chips)
+                                p.chips -= pay
+                                self.bets[p.name] += pay
+                                self.pot += pay
+                                self.action_history.append(f"{p.name} bet ${min_bet} (check converted to min bet)")
+                                if p.chips == 0:
+                                    p.state = 'all-in'
+                                # This is a new bet - all other active players need to act
+                                players_to_act = set(player.name for player in self.players 
+                                                   if player.state == 'active' and player.name != p.name)
+                            else:
+                                # No min bet specified, force fold but this should be rare
+                                p.state = 'folded'
+                                self.action_history.append(f"{p.name} folded (checks not allowed this round)")
                         else:
                             self.action_history.append(f"{p.name} checked")
                         
@@ -335,17 +353,24 @@ class Game:
                             # This is a new bet - all other active players need to act
                             players_to_act = set(player.name for player in self.players 
                                                if player.state == 'active' and player.name != p.name)
+                        elif is_already_bet(amt, current_bet, player_current_bet):
+                            # Player is trying to bet the same amount they already bet - treat as check
+                            self.action_history.append(f"{p.name} checked (already bet ${amt})")
                         elif amt <= current_bet:
-                            # Bet amount is not enough to raise - treat as call
+                            # Bet amount is not enough to raise
                             call_amount = max(current_bet - player_current_bet, 0)
                             pay = min(call_amount, p.chips)
                             p.chips -= pay
                             self.bets[p.name] += pay
                             self.pot += pay
                             if call_amount > 0:
-                                self.action_history.append(f"{p.name} called ${call_amount} (bet ${amt} too small)")
+                                self.action_history.append(f"{p.name} called ${call_amount} (bet ${amt} insufficient for raise)")
                             else:
-                                self.action_history.append(f"{p.name} checked (bet ${amt} too small)")
+                                # Player tried to bet the same amount they already bet - treat as check
+                                if amt == current_bet and player_current_bet == current_bet:
+                                    self.action_history.append(f"{p.name} checked (already bet ${amt})")
+                                else:
+                                    self.action_history.append(f"{p.name} checked (bet ${amt} insufficient for raise)")
                         else:
                             # Valid raise - amt is higher than current bet
                             bet_amount = amt - player_current_bet
