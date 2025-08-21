@@ -6,7 +6,7 @@ Starts the SSH server with room system and game engine.
 import argparse
 import asyncio
 import logging
-from poker.ssh_server_rooms import RoomSSHServer
+from poker.ssh_server import SSHServer
 
 
 async def main(host: str, port: int):
@@ -20,7 +20,7 @@ async def main(host: str, port: int):
     print("  • Commands: roomctl list, create, join, info, share, extend, delete")
     print("=" * 50)
     
-    server = RoomSSHServer(host=host, port=port)
+    server = SSHServer(host=host, port=port)
     await server.serve_forever()
 
 
