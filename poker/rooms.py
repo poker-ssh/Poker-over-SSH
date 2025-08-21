@@ -236,7 +236,7 @@ class RoomManager:
                             try:
                                 session._stdout.write(f"\r\n⏰ Room '{room.name}' has expired.\r\n")
                                 session._stdout.write(f"🔄 You've been moved to the default room.\r\n❯ ")
-                                asyncio.create_task(session._stdout.drain())
+                                await session._stdout.drain()
                             except Exception:
                                 pass
                 
