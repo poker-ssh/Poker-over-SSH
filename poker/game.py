@@ -353,7 +353,7 @@ class Game:
                             # This is a new bet - all other active players need to act
                             players_to_act = set(player.name for player in self.players 
                                                if player.state == 'active' and player.name != p.name)
-                        elif amt == current_bet and player_current_bet == current_bet:
+                        elif is_already_bet(amt, current_bet, player_current_bet):
                             # Player is trying to bet the same amount they already bet - treat as check
                             self.action_history.append(f"{p.name} checked (already bet ${amt})")
                         elif amt <= current_bet:
