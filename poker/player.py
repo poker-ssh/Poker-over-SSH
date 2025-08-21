@@ -22,6 +22,7 @@ class Player:
         self.chips = chips
         self.hand: List[Any] = []
         self.state: str = 'active'  # active, folded, all-in, disconnected
+        self.rebuys: int = 0  # Track number of rebuys
         # actor(game_state) -> {'action': str, 'amount': int}
         # actor may be sync or async; typing is broad to accept both.
         self.actor: Optional[Callable[[dict], Any]] = None
