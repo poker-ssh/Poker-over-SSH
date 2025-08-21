@@ -52,11 +52,11 @@ def card_str(card):
     rank_left = f"{rank:<2}"  # Left aligned, 2 chars wide
     rank_right = f"{rank:>2}"  # Right aligned, 2 chars wide
     
-    top = f"{Colors.BOLD}{Colors.BG_WHITE}{color}┏━━━┓{Colors.RESET}"
+    top = f"{Colors.BOLD}{Colors.BG_WHITE}{color}╭━━━╮{Colors.RESET}"
     mid1 = f"{Colors.BOLD}{Colors.BG_WHITE}{color}┃{rank_left}{symbol}┃{Colors.RESET}"
     mid2 = f"{Colors.BOLD}{Colors.BG_WHITE}{color}┃   ┃{Colors.RESET}"
     mid3 = f"{Colors.BOLD}{Colors.BG_WHITE}{color}┃{symbol}{rank_right}┃{Colors.RESET}"
-    bot = f"{Colors.BOLD}{Colors.BG_WHITE}{color}┗━━━┛{Colors.RESET}"
+    bot = f"{Colors.BOLD}{Colors.BG_WHITE}{color}╰━━━╯{Colors.RESET}"
     
     return [top, mid1, mid2, mid3, bot]
 
