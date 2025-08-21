@@ -366,12 +366,12 @@ class Game:
                     break
 
     def evaluate_hands(self) -> Dict[str, Any]:
-        """Evaluate active (non-folded) players and determine winners.
+        """Evaluate active (non-folded, non-eliminated) players and determine winners.
 
         Returns a dict with winners(list of player names), pot, and hand ranks.
         Also distributes the pot money to the winners.
         """
-        contenders = [p for p in self.players if p.state != 'folded']
+        contenders = [p for p in self.players if p.state not in ['folded', 'eliminated']]
         results = {}
         best_val = None
         winners: List[str] = []
