@@ -213,7 +213,7 @@ class RoomManager:
             try:
                 session._stdout.write(f"\r\n🏠 Room '{room.name}' has been deleted by {room.creator}.\r\n")
                 session._stdout.write(f"🔄 You've been moved to the default room.\r\n❯ ")
-                asyncio.create_task(session._stdout.drain())
+                _schedule_drain(session._stdout)
             except Exception:
                 pass
         
