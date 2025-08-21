@@ -21,7 +21,6 @@ This is made with help by GitHub Copilot
 
 from __future__ import annotations
 
-import asyncio
 import random
 import itertools
 from typing import List, Tuple, Dict, Any
@@ -188,144 +187,159 @@ class Game:
         self._draw(1)
         self.community.extend(self._draw(1))
 
-    async def betting_round(self, min_call: int = 0):
-        """Naive async betting round: ask each non-folded player for action once.
+    async def betting_round(self):
+        """Proper poker betting round: continue until all active players have called or folded.
 
         Player.take_action is expected to return a dict like
         {'action': 'fold'|'call'|'check'|'bet', 'amount': int}
-        This implementation applies the action conservatively.
         """
         
-        for p in self.players:
-            if p.state != 'active':
-                continue
+        # Get list of active players who can act
+        active_players = [p for p in self.players if p.state == 'active']
+        if len(active_players) <= 1:
+            return  # No betting with 0 or 1 active players
+            
+        # Track which players have acted in this round and if betting action occurred
+        players_to_act = set(p.name for p in active_players)
+        
+        while len(players_to_act) > 0:
+            # Check if we still have enough active players to continue
+            current_active = [p for p in self.players if p.state == 'active']
+            if len(current_active) <= 1:
+                break
                 
-            # Check if player has no chips
-            if p.chips <= 0:
-                if getattr(p, 'rebuys', 0) < 1:
-                    p.chips = 50  # Small rebuy amount
-                    p.rebuys += 1
-                    self.action_history.append(f"{p.name} received $50 rebuy (was broke, {p.rebuys}/1)")
-                else:
-                    p.state = 'eliminated'
-                    self.action_history.append(f"{p.name} eliminated (no rebuys left)")
+            for p in current_active[:]:  # Copy list since we might modify player states
+                if p.name not in players_to_act:
                     continue
-            
-            # Calculate current bet fresh for each player's turn
-            current_bet = max(self.bets.values()) if self.bets else 0
-            
-            try:
-                # Pass the current game state to the player with current player info
-                act = await p.take_action(self._public_state(current_player_name=p.name))
-            except NotImplementedError:
-                # default to call/check
-                act = {'action': 'call', 'amount': current_bet}
-            except Exception:
-                # on any actor error, fold the player
-                p.state = 'folded'
-                self.action_history.append(f"{p.name} folded (connection error)")
-                continue
-
-            a = act.get('action')
-            amt = int(act.get('amount', 0))
-            
-            if a == 'fold':
-                p.state = 'folded'
-                self.action_history.append(f"{p.name} folded")
-            elif a == 'call':
-                # Call the current bet
-                call_amount = max(current_bet - self.bets[p.name], 0)
-                pay = min(call_amount, p.chips)
-                p.chips -= pay
-                self.bets[p.name] += pay
-                self.pot += pay
+                    
+                # Check if player has no chips
+                if p.chips <= 0:
+                    if getattr(p, 'rebuys', 0) < 1:
+                        p.chips = 50  # Small rebuy amount
+                        p.rebuys += 1
+                        self.action_history.append(f"{p.name} received $50 rebuy (was broke, {p.rebuys}/1)")
+                    else:
+                        p.state = 'eliminated'
+                        self.action_history.append(f"{p.name} eliminated (no rebuys left)")
+                        players_to_act.discard(p.name)
+                        continue
                 
-                if p.chips == 0 and pay < call_amount:
-                    # Player went all-in but couldn't cover the full call
-                    p.state = 'all-in'
-                    self.action_history.append(f"{p.name} called ${pay} (all-in)")
-                elif call_amount > 0:
-                    self.action_history.append(f"{p.name} called ${call_amount}")
-                    if p.chips == 0:
-                        p.state = 'all-in'
-                else:
-                    self.action_history.append(f"{p.name} checked")
-            elif a == 'check':
-                # Only allowed if no bet to call
-                if current_bet > self.bets[p.name]:
-                    # Force to call
-                    call_amount = current_bet - self.bets[p.name]
+                # Calculate current bet fresh for each player's turn
+                current_bet = max(self.bets.values()) if self.bets else 0
+                player_current_bet = self.bets[p.name]
+                
+                try:
+                    # Pass the current game state to the player with current player info
+                    act = await p.take_action(self._public_state(current_player_name=p.name))
+                except NotImplementedError:
+                    # default to call/check
+                    if current_bet > player_current_bet:
+                        act = {'action': 'call', 'amount': current_bet}
+                    else:
+                        act = {'action': 'check', 'amount': 0}
+                except (AttributeError, ValueError, TypeError, KeyError):
+                    # on any actor error, fold the player
+                    p.state = 'folded'
+                    self.action_history.append(f"{p.name} folded (connection error)")
+                    players_to_act.discard(p.name)
+                    continue
+
+                a = act.get('action')
+                amt = int(act.get('amount', 0))
+                
+                # Remove player from players_to_act - they've now acted
+                players_to_act.discard(p.name)
+                
+                if a == 'fold':
+                    p.state = 'folded'
+                    self.action_history.append(f"{p.name} folded")
+                    
+                elif a == 'call':
+                    # Call the current bet
+                    call_amount = max(current_bet - player_current_bet, 0)
                     pay = min(call_amount, p.chips)
                     p.chips -= pay
                     self.bets[p.name] += pay
                     self.pot += pay
                     
                     if p.chips == 0 and pay < call_amount:
+                        # Player went all-in but couldn't cover the full call
                         p.state = 'all-in'
-                        self.action_history.append(f"{p.name} called ${pay} (all-in, forced)")
-                    else:
-                        self.action_history.append(f"{p.name} called ${call_amount} (forced)")
+                        self.action_history.append(f"{p.name} called ${pay} (all-in)")
+                    elif call_amount > 0:
+                        self.action_history.append(f"{p.name} called ${call_amount}")
                         if p.chips == 0:
                             p.state = 'all-in'
-                else:
-                    self.action_history.append(f"{p.name} checked")
-            elif a == 'bet':
-                # Bet the specified amount (must be positive)
-                if amt <= 0:
-                    # Invalid bet amount, treat as check/call
-                    if current_bet > self.bets[p.name]:
-                        call_amount = current_bet - self.bets[p.name]
-                        pay = min(call_amount, p.chips)
-                        p.chips -= pay
-                        self.bets[p.name] += pay
-                        self.pot += pay
-                        self.action_history.append(f"{p.name} called ${call_amount}")
                     else:
                         self.action_history.append(f"{p.name} checked")
-                else:
-                    # Valid bet amount - determine if it's a valid raise
-                    current_player_bet = self.bets[p.name]
-                    
-                    if current_bet == 0:
-                        # No one has bet yet - any positive amount is valid
-                        bet_amount = amt - current_player_bet
-                        pay = min(bet_amount, p.chips)
-                        p.chips -= pay
-                        self.bets[p.name] += pay
-                        self.pot += pay
-                        action_msg = f"{p.name} bet ${amt}"
-                        self.action_history.append(action_msg)
-                        print(f"DEBUG: Recording bet action: {action_msg}, pot now: {self.pot}, player bet: {self.bets[p.name]}")
-                        if p.chips == 0:
-                            p.state = 'all-in'
-                    elif amt <= current_bet:
-                        # Bet amount is not enough to raise - force to call
-                        call_amount = max(current_bet - current_player_bet, 0)
-                        pay = min(call_amount, p.chips)
-                        p.chips -= pay
-                        self.bets[p.name] += pay
-                        self.pot += pay
-                        if call_amount > 0:
-                            self.action_history.append(f"{p.name} called ${call_amount} (bet ${amt} too small)")
-                        else:
-                            self.action_history.append(f"{p.name} checked (bet ${amt} too small)")
+                        
+                elif a == 'check':
+                    # Only allowed if no bet to call
+                    if current_bet > player_current_bet:
+                        # Can't check when there's a bet to call - treat as fold
+                        p.state = 'folded'
+                        self.action_history.append(f"{p.name} folded (tried to check with bet to call)")
                     else:
-                        # Valid raise - amt is higher than current bet
-                        bet_amount = amt - current_player_bet
-                        pay = min(bet_amount, p.chips)
-                        p.chips -= pay
-                        self.bets[p.name] += pay
-                        self.pot += pay
-                        action_msg = f"{p.name} bet ${amt}"
-                        self.action_history.append(action_msg)
-                        print(f"DEBUG: Recording bet action: {action_msg}, pot now: {self.pot}, player bet: {self.bets[p.name]}")
-                        if p.chips == 0:
-                            p.state = 'all-in'
-            # other actions ignored for now
-            
-            # Small delay to ensure action is processed
-            await asyncio.sleep(0.1)
-            print(f"DEBUG: After {p.name}'s turn - Action history: {self.action_history[-3:] if len(self.action_history) >= 3 else self.action_history}")
+                        self.action_history.append(f"{p.name} checked")
+                        
+                elif a == 'bet':
+                    # Bet the specified amount (must be positive)
+                    if amt <= 0:
+                        # Invalid bet amount, treat as check/call
+                        if current_bet > player_current_bet:
+                            call_amount = current_bet - player_current_bet
+                            pay = min(call_amount, p.chips)
+                            p.chips -= pay
+                            self.bets[p.name] += pay
+                            self.pot += pay
+                            self.action_history.append(f"{p.name} called ${call_amount} (invalid bet)")
+                        else:
+                            self.action_history.append(f"{p.name} checked (invalid bet)")
+                    else:
+                        # Valid bet amount - determine if it's a valid raise
+                        if current_bet == 0:
+                            # No one has bet yet - any positive amount is valid
+                            bet_amount = amt - player_current_bet
+                            pay = min(bet_amount, p.chips)
+                            p.chips -= pay
+                            self.bets[p.name] += pay
+                            self.pot += pay
+                            action_msg = f"{p.name} bet ${amt}"
+                            self.action_history.append(action_msg)
+                            if p.chips == 0:
+                                p.state = 'all-in'
+                            # This is a new bet - all other active players need to act
+                            players_to_act = set(player.name for player in self.players 
+                                               if player.state == 'active' and player.name != p.name)
+                        elif amt <= current_bet:
+                            # Bet amount is not enough to raise - treat as call
+                            call_amount = max(current_bet - player_current_bet, 0)
+                            pay = min(call_amount, p.chips)
+                            p.chips -= pay
+                            self.bets[p.name] += pay
+                            self.pot += pay
+                            if call_amount > 0:
+                                self.action_history.append(f"{p.name} called ${call_amount} (bet ${amt} too small)")
+                            else:
+                                self.action_history.append(f"{p.name} checked (bet ${amt} too small)")
+                        else:
+                            # Valid raise - amt is higher than current bet
+                            bet_amount = amt - player_current_bet
+                            pay = min(bet_amount, p.chips)
+                            p.chips -= pay
+                            self.bets[p.name] += pay
+                            self.pot += pay
+                            action_msg = f"{p.name} raised to ${amt}"
+                            self.action_history.append(action_msg)
+                            if p.chips == 0:
+                                p.state = 'all-in'
+                            # This is a raise - all other active players need to act again
+                            players_to_act = set(player.name for player in self.players 
+                                               if player.state == 'active' and player.name != p.name)
+                
+                # Break inner loop if no more players to act in this round
+                if len(players_to_act) == 0:
+                    break
 
     def evaluate_hands(self) -> Dict[str, Any]:
         """Evaluate active (non-folded) players and determine winners.
@@ -388,19 +402,19 @@ class Game:
         self.deal_hole()
 
         # pre-flop betting
-        await self.betting_round(min_call=0)
+        await self.betting_round()
 
         # flop
         self.deal_flop()
-        await self.betting_round(min_call=0)
+        await self.betting_round()
 
         # turn
         self.deal_turn()
-        await self.betting_round(min_call=0)
+        await self.betting_round()
 
         # river
         self.deal_river()
-        await self.betting_round(min_call=0)
+        await self.betting_round()
 
         # showdown
         return self.evaluate_hands()
