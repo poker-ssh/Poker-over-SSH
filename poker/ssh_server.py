@@ -629,6 +629,7 @@ class SSHServer:
             self.port,
             server_host_keys=[str(host_key_path)],
             session_factory=session_factory,
+            reuse_address=True,
         )
 
         logging.info(f"SSH server listening on {self.host}:{self.port}")
