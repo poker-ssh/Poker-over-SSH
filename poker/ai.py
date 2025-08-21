@@ -15,7 +15,7 @@ class PokerAI:
 
     async def decide_action(self, game_state: Dict[str, Any]) -> Dict[str, Any]:
         # Add a small random delay to simulate thinking
-        await asyncio.sleep(random.uniform(0.5, 1.5))
+        await asyncio.sleep(random.uniform(0.5, 1))
         
         # game_state contains 'community', 'pot', 'bets', 'players'
         community = game_state.get('community', [])
@@ -27,6 +27,11 @@ class PokerAI:
         my_bet = bets.get(self.player.name, 0)
         call_amount = max(current_bet - my_bet, 0)
         
+        # If nobody has bet (everyone checked), prefer to check rather than folding.
+        # Returning a 'call' with amount 0 represents a check in this codebase.
+        if call_amount == 0:
+            return {'action': 'call', 'amount': 0}
+
         # If we don't have enough money to call, fold
         if call_amount > chips:
             return {'action': 'fold', 'amount': 0}
