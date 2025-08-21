@@ -34,10 +34,11 @@ class _SimpleSessionBase:
 
         # Send welcome message immediately
         try:
-            self._stdout.write("Welcome to Poker-over-SSH (demo)\r\n")
+            from poker.terminal_ui import Colors
+            self._stdout.write(f"{Colors.BOLD}{Colors.YELLOW}🎰 Welcome to Poker-over-SSH! 🎰{Colors.RESET}\r\n")
             if username:
-                self._stdout.write(f"Logged in as: {username}\r\n")
-            self._stdout.write("Type 'help' for commands.\r\n")
+                self._stdout.write(f"🎭 Logged in as: {Colors.CYAN}{username}{Colors.RESET}\r\n")
+            self._stdout.write(f"💡 Type '{Colors.GREEN}help{Colors.RESET}' for commands or '{Colors.GREEN}seat{Colors.RESET}' to join a game.\r\n")
             self._stdout.write("❯ ")
         except Exception:
             pass
@@ -155,13 +156,23 @@ class _SimpleSessionBase:
 
         if cmd.lower() == "help":
             try:
-                self._stdout.write("Commands:\r\n")
+                self._stdout.write("🎰 Poker-over-SSH Commands:\r\n")
                 self._stdout.write("  help     Show this help\r\n")
                 self._stdout.write("  whoami   Show connection info\r\n")
-                self._stdout.write("  seat     Claim a seat: 'seat <name>'\r\n")
-                self._stdout.write("  players  List all players\r\n")
-                self._stdout.write("  start    Start a poker round (requires 2+ players)\r\n")
+                self._stdout.write("  seat     Claim a seat: 'seat <name>' (auto-uses SSH username)\r\n")
+                self._stdout.write("  players  List all players and their status\r\n")
+                self._stdout.write("  start    Start a poker round (requires 1+ human players)\r\n")
                 self._stdout.write("  quit     Disconnect\r\n")
+                self._stdout.write("\r\n🎲 During Your Turn:\r\n")
+                self._stdout.write("  fold, f           - Give up your hand\r\n")
+                self._stdout.write("  call, c           - Match the current bet\r\n")
+                self._stdout.write("  check             - Pass (when no bet to call)\r\n")
+                self._stdout.write("  bet <amount>, b <amount> - Bet the specified amount\r\n")
+                self._stdout.write("  help              - Show available actions\r\n")
+                self._stdout.write("\r\n💡 Tips:\r\n")
+                self._stdout.write("  - Pre-flop: You must bet or fold (no checking)\r\n")
+                self._stdout.write("  - The game shows valid actions for each situation\r\n")
+                self._stdout.write("  - Type 'help' during your turn for context-specific options\r\n")
                 self._stdout.write("\r\n❯ ")
                 await self._stdout.drain()
             except Exception:
@@ -180,15 +191,34 @@ class _SimpleSessionBase:
         if cmd.lower() == "players":
             if self._server_state is not None:
                 try:
+                    from poker.terminal_ui import Colors
                     players = self._server_state.pm.players
                     if not players:
-                        self._stdout.write("No players registered\r\n\r\n❯ ")
+                        self._stdout.write(f"{Colors.DIM}No players registered yet.{Colors.RESET}\r\n")
+                        self._stdout.write(f"💡 Use '{Colors.GREEN}seat{Colors.RESET}' to join the game!\r\n\r\n❯ ")
                     else:
-                        self._stdout.write("🎭 Registered Players:\r\n")
+                        self._stdout.write(f"{Colors.BOLD}{Colors.MAGENTA}🎭 Registered Players:{Colors.RESET}\r\n")
+                        human_count = 0
+                        ai_count = 0
                         for i, p in enumerate(players, 1):
-                            status = "💚 online" if any(session for session, player in self._server_state.session_map.items() if player == p) else "💔 offline"
-                            self._stdout.write(f"  {i}. {p.name} - ${p.chips} - {status}\r\n")
-                        self._stdout.write("\r\n❯ ")
+                            if p.is_ai:
+                                ai_count += 1
+                                icon = "🤖"
+                                type_label = f"{Colors.CYAN}AI{Colors.RESET}"
+                            else:
+                                human_count += 1
+                                icon = "👤"
+                                type_label = f"{Colors.YELLOW}Human{Colors.RESET}"
+                            
+                            status = f"{Colors.GREEN}💚 online{Colors.RESET}" if any(session for session, player in self._server_state.session_map.items() if player == p) else f"{Colors.RED}💔 offline{Colors.RESET}"
+                            self._stdout.write(f"  {i}. {icon} {Colors.BOLD}{p.name}{Colors.RESET} - ${p.chips} - {type_label} - {status}\r\n")
+                        
+                        self._stdout.write(f"\r\n📊 Summary: {human_count} human, {ai_count} AI players")
+                        if human_count > 0:
+                            self._stdout.write(f" - {Colors.GREEN}Ready to start!{Colors.RESET}")
+                        else:
+                            self._stdout.write(f" - {Colors.YELLOW}Need at least 1 human player{Colors.RESET}")
+                        self._stdout.write(f"\r\n\r\n❯ ")
                     await self._stdout.drain()
                 except Exception:
                     pass
@@ -213,22 +243,37 @@ class _SimpleSessionBase:
                 else:
                     # No name provided and no SSH username available
                     try:
-                        self._stdout.write("Usage: seat [name] (defaults to SSH username)\r\n\r\n❯ ")
+                        from poker.terminal_ui import Colors
+                        self._stdout.write(f"❌ {Colors.RED}Usage: seat [name]{Colors.RESET}\r\n")
+                        self._stdout.write(f"💡 Or just type '{Colors.GREEN}seat{Colors.RESET}' to use your SSH username ({self._username or 'not available'})\r\n\r\n❯ ")
                         await self._stdout.drain()
                     except Exception:
                         pass
                     return
                 
                 try:
+                    # Check if name is already taken
+                    existing = next((p for p in self._server_state.pm.players if p.name == name), None)
+                    if existing and any(session for session, player in self._server_state.session_map.items() if player == existing):
+                        from poker.terminal_ui import Colors
+                        self._stdout.write(f"❌ {Colors.RED}Name '{name}' is already taken by an online player.{Colors.RESET}\r\n")
+                        self._stdout.write(f"💡 Try a different name: {Colors.GREEN}seat <other_name>{Colors.RESET}\r\n\r\n❯ ")
+                        await self._stdout.drain()
+                        return
+                    
                     player = self._server_state.register_player_for_session(name, self)
                     try:
-                        self._stdout.write(f"Seat claimed for {name}\r\n\r\n❯ ")
+                        from poker.terminal_ui import Colors
+                        self._stdout.write(f"✅ {Colors.GREEN}Seat claimed for {Colors.BOLD}{name}{Colors.RESET}{Colors.GREEN}!{Colors.RESET}\r\n")
+                        self._stdout.write(f"💰 Starting chips: ${player.chips}\r\n")
+                        self._stdout.write(f"🎲 Type '{Colors.CYAN}start{Colors.RESET}' to begin a poker round.\r\n\r\n❯ ")
                         await self._stdout.drain()
                     except Exception:
                         pass
                 except Exception as e:
                     try:
-                        self._stdout.write(f"Failed to claim seat: {e}\r\n\r\n❯ ")
+                        from poker.terminal_ui import Colors
+                        self._stdout.write(f"❌ {Colors.RED}Failed to claim seat: {e}{Colors.RESET}\r\n\r\n❯ ")
                         await self._stdout.drain()
                     except Exception:
                         pass
@@ -361,55 +406,160 @@ class ServerState:
                     
                 session._stdout.write(view + "\r\n")
                 
-                # Better prompt with options
+                # Calculate betting context
                 current_bet = max(game_state.get('bets', {}).values()) if game_state.get('bets') else 0
                 player_bet = game_state.get('bets', {}).get(player.name, 0)
                 to_call = current_bet - player_bet
                 
+                # Determine what phase we're in
+                community = game_state.get('community', [])
+                is_preflop = len(community) == 0
+                
+                # Show contextual prompt with valid actions
+                session._stdout.write(f"\r\n{Colors.BOLD}{Colors.YELLOW}💭 Your Action:{Colors.RESET}\r\n")
+                
                 if to_call > 0:
-                    session._stdout.write(f"💭 Your turn! (fold, call ${to_call}, or bet <amount>): ")
+                    session._stdout.write(f"   💸 {Colors.RED}Call ${to_call}{Colors.RESET} - Match the current bet\r\n")
+                    session._stdout.write(f"   🎲 {Colors.CYAN}Bet <amount>{Colors.RESET} - Raise the bet (must be > ${current_bet})\r\n")
+                    session._stdout.write(f"   ❌ {Colors.DIM}Fold{Colors.RESET} - Give up your hand\r\n")
                 else:
-                    session._stdout.write("💭 Your turn! (fold, check, or bet <amount>): ")
+                    # Show current bet context if applicable
+                    player_current_bet = game_state.get('bets', {}).get(player.name, 0)
+                    if player_current_bet > 0:
+                        session._stdout.write(f"   {Colors.DIM}Current situation: You've bet ${player_current_bet}, others have matched{Colors.RESET}\r\n")
+                    
+                    if is_preflop:
+                        session._stdout.write(f"   🎲 {Colors.CYAN}Bet <amount>{Colors.RESET} - Make the first bet (minimum $1)\r\n")
+                        session._stdout.write(f"   ❌ {Colors.DIM}Fold{Colors.RESET} - Give up your hand\r\n")
+                        session._stdout.write(f"   {Colors.DIM}Note: Checking not allowed pre-flop{Colors.RESET}\r\n")
+                    else:
+                        session._stdout.write(f"   ✓ {Colors.GREEN}Check{Colors.RESET} - Pass with no bet\r\n")
+                        session._stdout.write(f"   🎲 {Colors.CYAN}Bet <amount>{Colors.RESET} - Make a bet (must be higher than current)\r\n")
+                        session._stdout.write(f"   ❌ {Colors.DIM}Fold{Colors.RESET} - Give up your hand\r\n")
+                
+                session._stdout.write(f"\r\n{Colors.BOLD}Enter your action:{Colors.RESET} ")
                 await session._stdout.drain()
                 
-                # read a full line from the session stdin with timeout
-                try:
-                    line = await asyncio.wait_for(session._stdin.readline(), timeout=30.0)
-                except asyncio.TimeoutError:
-                    # Auto-fold on timeout
-                    return {'action': 'fold', 'amount': 0}
-                    
-                if isinstance(line, bytes):
-                    line = line.decode('utf-8', errors='ignore')
-                line = (line or "").strip()
-                
-                if not line:
-                    # Default to check if no bet to call, otherwise call
-                    current_bet = max(game_state.get('bets', {}).values()) if game_state.get('bets') else 0
-                    player_bet = game_state.get('bets', {}).get(player.name, 0)
-                    if current_bet > player_bet:
-                        return {'action': 'call', 'amount': 0}
-                    else:
-                        return {'action': 'check', 'amount': 0}
-                        
-                parts = line.split()
-                if not parts:
-                    return {'action': 'check', 'amount': 0}
-                    
-                cmd = parts[0].lower()
-                if cmd in ('fold', 'f'):
-                    return {'action': 'fold', 'amount': 0}
-                if cmd in ('call', 'c'):
-                    return {'action': 'call', 'amount': 0}
-                if cmd in ('check',):
-                    return {'action': 'check', 'amount': 0}
-                if cmd in ('bet', 'b'):
+                while True:  # Loop until we get a valid action
                     try:
-                        amt = int(parts[1]) if len(parts) > 1 else 0
-                    except Exception:
-                        amt = 0
-                    return {'action': 'bet', 'amount': amt}
-                return {'action': 'call', 'amount': 0}
+                        # read a full line from the session stdin with timeout
+                        line = await asyncio.wait_for(session._stdin.readline(), timeout=30.0)
+                    except asyncio.TimeoutError:
+                        session._stdout.write(f"\r\n⏰ {Colors.YELLOW}Time's up! Auto-folding...{Colors.RESET}\r\n")
+                        await session._stdout.drain()
+                        return {'action': 'fold', 'amount': 0}
+                        
+                    if isinstance(line, bytes):
+                        line = line.decode('utf-8', errors='ignore')
+                    line = (line or "").strip()
+                    
+                    if not line:
+                        session._stdout.write(f"❓ Please enter an action. Type 'help' for options: ")
+                        await session._stdout.drain()
+                        continue
+                    
+                    parts = line.split()
+                    cmd = parts[0].lower()
+                    
+                    if cmd == 'help':
+                        session._stdout.write(f"\r\n{Colors.BOLD}Available commands:{Colors.RESET}\r\n")
+                        session._stdout.write(f"  fold, f     - Give up your hand\r\n")
+                        if to_call > 0:
+                            session._stdout.write(f"  call, c     - Call ${to_call}\r\n")
+                        else:
+                            if not is_preflop:
+                                session._stdout.write(f"  check       - Pass with no bet\r\n")
+                        session._stdout.write(f"  bet <amount>, b <amount> - Bet specified amount\r\n")
+                        session._stdout.write(f"\r\nEnter your action: ")
+                        await session._stdout.drain()
+                        continue
+                    
+                    # Handle fold with confirmation for significant actions
+                    if cmd in ('fold', 'f'):
+                        if to_call == 0 and not is_preflop:
+                            # Folding when could check - ask for confirmation
+                            session._stdout.write(f"⚠️  {Colors.YELLOW}You can check for free. Are you sure you want to fold? (y/n):{Colors.RESET} ")
+                            await session._stdout.drain()
+                            confirm_line = await asyncio.wait_for(session._stdin.readline(), timeout=10.0)
+                            if isinstance(confirm_line, bytes):
+                                confirm_line = confirm_line.decode('utf-8', errors='ignore')
+                            if confirm_line.strip().lower() not in ('y', 'yes'):
+                                session._stdout.write(f"👍 Fold cancelled. Enter your action: ")
+                                await session._stdout.drain()
+                                continue
+                        return {'action': 'fold', 'amount': 0}
+                    
+                    # Handle call
+                    if cmd in ('call', 'c'):
+                        if to_call == 0:
+                            if is_preflop:
+                                session._stdout.write(f"❌ {Colors.RED}Cannot check pre-flop. Please bet or fold:{Colors.RESET} ")
+                            else:
+                                session._stdout.write(f"✓ {Colors.GREEN}No bet to call - this will check.{Colors.RESET}\r\n")
+                                return {'action': 'check', 'amount': 0}
+                            await session._stdout.drain()
+                            continue
+                        return {'action': 'call', 'amount': 0}
+                    
+                    # Handle check
+                    if cmd in ('check',):
+                        if to_call > 0:
+                            session._stdout.write(f"❌ {Colors.RED}Cannot check - there's a ${to_call} bet to call. Use 'call' or 'fold':{Colors.RESET} ")
+                            await session._stdout.drain()
+                            continue
+                        if is_preflop:
+                            session._stdout.write(f"❌ {Colors.RED}Cannot check pre-flop. Please bet or fold:{Colors.RESET} ")
+                            await session._stdout.drain()
+                            continue
+                        return {'action': 'check', 'amount': 0}
+                    
+                    # Handle bet
+                    if cmd in ('bet', 'b'):
+                        try:
+                            amt = int(parts[1]) if len(parts) > 1 else 0
+                        except (ValueError, IndexError):
+                            session._stdout.write(f"❌ {Colors.RED}Invalid bet amount. Use: bet <number>:{Colors.RESET} ")
+                            await session._stdout.drain()
+                            continue
+                        
+                        if amt <= 0:
+                            session._stdout.write(f"❌ {Colors.RED}Bet amount must be positive:{Colors.RESET} ")
+                            await session._stdout.drain()
+                            continue
+                        
+                        # When there's no bet to call, handle special cases
+                        if to_call == 0:
+                            # Check if player is trying to bet the same amount as before
+                            player_current_bet = game_state.get('bets', {}).get(player.name, 0)
+                            if amt == player_current_bet and player_current_bet > 0:
+                                session._stdout.write(f"💡 {Colors.YELLOW}You already bet ${amt}. Use 'check' to pass or bet more to raise:{Colors.RESET} ")
+                                await session._stdout.drain()
+                                continue
+                        
+                        if amt > player.chips:
+                            session._stdout.write(f"❌ {Colors.RED}Not enough chips! You have ${player.chips}:{Colors.RESET} ")
+                            await session._stdout.drain()
+                            continue
+                        
+                        if to_call > 0 and amt <= current_bet:
+                            if amt == current_bet:
+                                session._stdout.write(f"💡 {Colors.YELLOW}Betting ${amt} is the same as the current bet. Use 'call' to match it, or bet more to raise:{Colors.RESET} ")
+                            else:
+                                session._stdout.write(f"❌ {Colors.RED}To raise, bet must be > ${current_bet} (current bet):{Colors.RESET} ")
+                            await session._stdout.drain()
+                            continue
+                        
+                        if is_preflop and amt < 1:
+                            session._stdout.write(f"❌ {Colors.RED}Minimum bet pre-flop is $1:{Colors.RESET} ")
+                            await session._stdout.drain()
+                            continue
+                        
+                        return {'action': 'bet', 'amount': amt}
+                    
+                    # Unknown command
+                    session._stdout.write(f"❓ {Colors.YELLOW}Unknown command '{cmd}'. Type 'help' for options:{Colors.RESET} ")
+                    await session._stdout.drain()
+                    
             except Exception:
                 # If any error occurs, fold to keep the game going
                 return {'action': 'fold', 'amount': 0}
