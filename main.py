@@ -17,7 +17,6 @@ async def main(host: str, port: int):
     print("  • Room codes only visible to creators and members")
     print("  • Room expiry system (30 minutes, extendable)")
     print("  • Room extension and management")
-    print("  • Commands: roomctl list, create, join, info, share, extend, delete")
     print("=" * 50)
     
     server = SSHServer(host=host, port=port)

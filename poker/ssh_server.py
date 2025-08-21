@@ -853,7 +853,7 @@ class RoomSession:
                 await self._stdout.drain()
                 return
             
-            async with room.game_lock:
+            async with room._game_lock:
                 if room.game_in_progress:
                     self._stdout.write(f"⚠️  Game already in progress in this room\r\n\r\n❯ ")
                     await self._stdout.drain()
