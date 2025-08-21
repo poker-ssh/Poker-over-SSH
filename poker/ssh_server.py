@@ -11,6 +11,7 @@ import asyncio
 import logging
 from typing import Optional, Dict, Any
 from poker.terminal_ui import Colors
+from poker.rooms import RoomManager
 
 
 try:
@@ -31,6 +32,7 @@ class _SimpleSessionBase:
         self._server_state = server_state
         self._username = username
         self._auto_seated = False  # Track if user was auto-seated
+        self._current_room = "default"  # Default room
 
         # Send welcome message immediately
         try:
@@ -156,13 +158,22 @@ class _SimpleSessionBase:
 
         if cmd.lower() == "help":
             try:
+                from poker.terminal_ui import Colors
                 self._stdout.write("🎰 Poker-over-SSH Commands:\r\n")
                 self._stdout.write("  help     Show this help\r\n")
                 self._stdout.write("  whoami   Show connection info\r\n")
                 self._stdout.write("  seat     Claim a seat: 'seat <name>' (auto-uses SSH username)\r\n")
                 self._stdout.write("  players  List all players and their status\r\n")
                 self._stdout.write("  start    Start a poker round (requires 1+ human players)\r\n")
+                self._stdout.write("  roomctl  Room management commands\r\n")
                 self._stdout.write("  quit     Disconnect\r\n")
+                self._stdout.write("\r\n🏠 Room Commands:\r\n")
+                self._stdout.write("  roomctl list           - List all rooms\r\n")
+                self._stdout.write("  roomctl create [name]  - Create a new room\r\n")
+                self._stdout.write("  roomctl join <code>    - Join a room by code\r\n")
+                self._stdout.write("  roomctl info           - Show current room info\r\n")
+                self._stdout.write("  roomctl extend         - Extend current room by 30 minutes\r\n")
+                self._stdout.write("  roomctl delete         - Delete current room (creator only)\r\n")
                 self._stdout.write("\r\n🎲 During Your Turn:\r\n")
                 self._stdout.write("  fold, f           - Give up your hand\r\n")
                 self._stdout.write("  call, c           - Match the current bet\r\n")
@@ -173,6 +184,7 @@ class _SimpleSessionBase:
                 self._stdout.write("  - Pre-flop: You must bet or fold (no checking)\r\n")
                 self._stdout.write("  - The game shows valid actions for each situation\r\n")
                 self._stdout.write("  - Type 'help' during your turn for context-specific options\r\n")
+                self._stdout.write("  - Rooms expire after 30 minutes unless extended\r\n")
                 self._stdout.write("\r\n❯ ")
                 await self._stdout.drain()
             except Exception:
@@ -365,25 +377,43 @@ else:
 
 
 class ServerState:
-    """Holds global server objects: PlayerManager, session map, and manual game control."""
+    """Holds global server objects: RoomManager and session management."""
 
     def __init__(self):
-        from poker.player import PlayerManager
-
-        self.pm = PlayerManager()
-        # map session -> player
-        self.session_map: Dict[Any, Any] = {}
-        self.game_in_progress = False
-        self._game_lock = asyncio.Lock()
+        self.room_manager = RoomManager()
+        # Global session to room mapping
+        self.session_rooms: Dict[Any, str] = {}  # session -> room_code
+    
+    def get_session_room(self, session) -> str:
+        """Get the room code for a session, defaulting to 'default'."""
+        return self.session_rooms.get(session, "default")
+    
+    def set_session_room(self, session, room_code: str):
+        """Set the room for a session."""
+        self.session_rooms[session] = room_code
 
     def register_player_for_session(self, name: str, session):
-        existing = next((p for p in self.pm.players if p.name == name), None)
+        # Get the room for this session
+        room_code = self.get_session_room(session)
+        room = self.room_manager.get_room(room_code)
+        
+        if not room:
+            # Room expired or doesn't exist, move to default
+            room_code = "default"
+            room = self.room_manager.get_room("default")
+            self.set_session_room(session, room_code)
+            
+        if not room:
+            raise RuntimeError("Default room not available")
+        
+        # Check if player already exists in this room
+        existing = next((p for p in room.pm.players if p.name == name), None)
         if existing is not None:
             player = existing
         else:
-            player = self.pm.register_player(name)
+            player = room.pm.register_player(name)
 
-        self.session_map[session] = player
+        room.session_map[session] = player
 
         async def actor(game_state: Dict[str, Any]):
             try:
