@@ -72,6 +72,13 @@ class RoomSession:
                     if self._should_exit:
                         break
                 except Exception as e:
+                    # Ignore terminal size change events and other non-critical SSH events
+                    error_msg = str(e)
+                    if ("Terminal size change" in error_msg or 
+                        "Connection lost" in error_msg or
+                        "Channel closed" in error_msg):
+                        # These are normal SSH events, not errors - continue reading
+                        continue
                     logging.info(f"Error reading input: {e}")
                     break
         except asyncio.CancelledError:
@@ -982,6 +989,74 @@ class RoomSession:
         except Exception as e:
             self._stdout.write(f"❌ Failed to start game: {e}\r\n\r\n❯ ")
             await self._stdout.drain()
+
+    def signal_received(self, signame):
+        """Handle SSH signals gracefully."""
+        logging.debug(f"RoomSession.signal_received: {signame}")
+        try:
+            if signame in ("INT", "SIGINT"):
+                self._input_buffer = ""
+                try:
+                    self._stdout.write("^C\r\n❯ ")
+                    try:
+                        asyncio.create_task(self._stdout.drain())
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+                return True
+            elif signame in ("WINCH", "SIGWINCH"):
+                # Handle window size changes gracefully
+                logging.debug("Window size changed - continuing normally")
+                return True
+        except Exception:
+            logging.exception("Error in signal_received")
+        return False
+
+    def session_started(self, channel):
+        """Handle session start."""
+        self._channel = channel
+        logging.info(f"RoomSession.session_started: channel={channel}")
+
+    def connection_lost(self, exc):
+        """Handle connection loss."""
+        if exc:
+            logging.info(f"RoomSession.connection_lost: {exc}")
+        else:
+            logging.debug("RoomSession.connection_lost: Clean disconnection")
+        
+        # Mark session for cleanup
+        self._should_exit = True
+        self._running = False
+        
+        if hasattr(self, '_server_state') and self._server_state:
+            # Clean up session from room mappings
+            try:
+                for room_code, room in self._server_state.room_manager.rooms.items():
+                    if self in room.session_map:
+                        del room.session_map[self]
+                        logging.info(f"Cleaned up session from room {room_code}")
+                if self in self._server_state.session_rooms:
+                    del self._server_state.session_rooms[self]
+                    logging.info("Cleaned up session from server state")
+            except Exception as e:
+                logging.warning(f"Error during connection cleanup: {e}")
+
+    def pty_requested(self, term_type, term_size, term_modes):
+        """Handle PTY requests."""
+        logging.debug(f"PTY requested: type={term_type}, size={term_size}")
+        return True
+
+    def window_change_requested(self, width, height, pixwidth, pixheight):
+        """Handle terminal window size changes."""
+        logging.debug(f"Window change: {width}x{height} ({pixwidth}x{pixheight} pixels)")
+        # AsyncSSH handles the window change automatically, just need to acknowledge it
+        return True
+
+    def break_received(self, msec):
+        """Handle break signals."""
+        logging.debug(f"Break received: {msec}ms")
+        return True
 
 
 # Server state for room-aware system
