@@ -100,7 +100,9 @@ class TerminalUI:
                 for player_name, bet_amount in bets.items():
                     if bet_amount == current_bet and bet_amount > 0:
                         out.append(f"   {Colors.DIM}(set by {player_name}){Colors.RESET}")
-                        break
+                last_bettor = game_state.get('last_bettor')
+                if last_bettor:
+                    out.append(f"   {Colors.DIM}(set by {last_bettor}){Colors.RESET}")
         out.append("")
         
         # Show action history if provided
