@@ -24,8 +24,8 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
-        # Use a token that can bypass branch protection
-        token: ${{ secrets.GITHUB_TOKEN }}
+        # Use a token that can create PR
+        token: ${{ secrets.PAT_TOKEN }}
         ref: main
         fetch-depth: 0
         
@@ -106,7 +106,7 @@ jobs:
           gh pr merge "$BRANCH_NAME" --merge --admin
         fi
       env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_TOKEN: ${{ secrets.PAT_TOKEN }}
         
     - name: Create version info summary
       run: |
