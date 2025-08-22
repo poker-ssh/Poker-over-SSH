@@ -214,4 +214,7 @@ __marimo__/
 
 # nohup log
 nohup.out
+
+# database
+*.db*
 ######################

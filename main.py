@@ -17,7 +17,22 @@ async def main(host: str, port: int):
     print("  • Room codes only visible to creators and members")
     print("  • Room expiry system (30 minutes, extendable)")
     print("  • Room extension and management")
+    print("  • Persistent wallet system with database")
+    print("  • All actions logged to database")
     print("=" * 50)
+    
+    # Initialize database
+    try:
+        from poker.database import init_database
+        db = init_database()
+        print("✅ Database initialized successfully")
+        
+        # Show database stats
+        stats = db.get_database_stats()
+        print(f"📊 Database stats: {stats['total_wallets']} wallets, {stats['total_actions']} actions logged")
+    except Exception as e:
+        print(f"⚠️  Database initialization warning: {e}")
+        print("💡 Continuing without persistent wallet system")
     
     server = SSHServer(host=host, port=port)
     await server.serve_forever()

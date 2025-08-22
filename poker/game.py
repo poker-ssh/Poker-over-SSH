@@ -206,8 +206,9 @@ def hand_description(hand_rank: int, tiebreakers: List[int]) -> str:
 
 
 class Game:
-    def __init__(self, players: List[Any]):
+    def __init__(self, players: List[Any], player_manager=None):
         self.players = players
+        self.player_manager = player_manager
         self.deck: List[Card] = []
         self.pot = 0
         self.community: List[Card] = []

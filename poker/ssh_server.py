@@ -160,6 +160,9 @@ class RoomSession:
 
     async def _process_command(self, cmd: str):
         """Process user commands."""
+        # Log all user commands for debugging
+        logging.debug(f"User {self._username} in room {self._current_room} executed command: '{cmd}'")
+        
         if not cmd:
             try:
                 self._stdout.write("❯ ")
@@ -169,6 +172,7 @@ class RoomSession:
             return
 
         if cmd.lower() in ("quit", "exit"):
+            logging.debug(f"User {self._username} disconnecting")
             try:
                 self._stdout.write("Goodbye!\r\n")
                 await self._stdout.drain()
@@ -179,31 +183,38 @@ class RoomSession:
 
         # Handle roomctl commands
         if cmd.lower().startswith("roomctl"):
+            logging.debug(f"User {self._username} executing roomctl command: {cmd}")
             await self._handle_roomctl(cmd)
             return
 
         if cmd.lower() == "help":
+            logging.debug(f"User {self._username} requested help")
             await self._show_help()
             return
 
         if cmd.lower() == "whoami":
+            logging.debug(f"User {self._username} requested whoami")
             await self._show_whoami()
             return
 
         if cmd.lower() == "server":
+            logging.debug(f"User {self._username} requested server info")
             await self._show_server_info()
             return
 
         if cmd.lower() == "players":
+            logging.debug(f"User {self._username} requested players list")
             await self._show_players()
             return
 
         if cmd.lower() == "seat":
+            logging.debug(f"User {self._username} attempting to seat")
             await self._handle_seat(cmd)
             return
 
         if cmd.lower().startswith("seat "):
             # Reject seat commands with arguments
+            logging.debug(f"User {self._username} tried seat with arguments: {cmd}")
             self._stdout.write(f"❌ {Colors.RED}The 'seat' command no longer accepts arguments.{Colors.RESET}\r\n")
             self._stdout.write(f"💡 Just type '{Colors.GREEN}seat{Colors.RESET}' to use your SSH username ({self._username or 'not available'})\r\n\r\n")
             self._stdout.write(f"💡 Or disconnect and connect with a different username: {Colors.GREEN}ssh <other_username>@{get_ssh_connection_string()}{Colors.RESET}\r\n\r\n❯ ")
@@ -211,10 +222,22 @@ class RoomSession:
             return
 
         if cmd.lower() == "start":
+            logging.debug(f"User {self._username} attempting to start game")
             await self._handle_start()
             return
 
+        if cmd.lower() == "wallet":
+            logging.debug(f"User {self._username} requesting wallet info")
+            await self._handle_wallet()
+            return
+
+        if cmd.lower().startswith("wallet "):
+            logging.debug(f"User {self._username} executing wallet command: {cmd}")
+            await self._handle_wallet_command(cmd)
+            return
+
         # Unknown command
+        logging.debug(f"User {self._username} used unknown command: {cmd}")
         try:
             self._stdout.write(f"❓ Unknown command: {cmd}\r\n")
             self._stdout.write(f"💡 Type '{Colors.GREEN}help{Colors.RESET}' for available commands.\r\n\r\n❯ ")
@@ -263,8 +286,15 @@ class RoomSession:
             self._stdout.write("  seat     Claim a seat using your SSH username\r\n")
             self._stdout.write("  players  List all players in current room\r\n")
             self._stdout.write("  start    Start a poker round (requires 1+ human players)\r\n")
+            self._stdout.write("  wallet   Show your wallet balance and stats\r\n")
             self._stdout.write("  roomctl  Room management commands\r\n")
             self._stdout.write("  quit     Disconnect\r\n")
+            self._stdout.write("\r\n💰 Wallet Commands:\r\n")
+            self._stdout.write("  wallet               - Show wallet balance and stats\r\n")
+            self._stdout.write("  wallet history       - Show transaction history\r\n")
+            self._stdout.write("  wallet actions       - Show recent game actions\r\n")
+            self._stdout.write("  wallet leaderboard   - Show top players\r\n")
+            self._stdout.write("  wallet add           - Claim hourly bonus ($150, once per hour)\r\n")
             self._stdout.write("\r\n🏠 Room Commands:\r\n")
             self._stdout.write("  roomctl list           - List all rooms\r\n")
             self._stdout.write("  roomctl create [name]  - Create a new room\r\n")
@@ -274,6 +304,8 @@ class RoomSession:
             self._stdout.write("  roomctl extend         - Extend current room by 30 minutes\r\n")
             self._stdout.write("  roomctl delete         - Delete current room (creator only)\r\n")
             self._stdout.write("\r\n💡 Tips:\r\n")
+            self._stdout.write("  - Your wallet persists across server restarts\r\n")
+            self._stdout.write("  - All actions are logged to the database\r\n")
             self._stdout.write("  - Rooms expire after 30 minutes unless extended\r\n")
             self._stdout.write("  - The default room never expires\r\n")
             self._stdout.write("  - Room codes are private and only visible to creators and members\r\n")
@@ -557,6 +589,88 @@ class RoomSession:
             await self._stdout.drain()
         except Exception as e:
             self._stdout.write(f"❌ Error deleting room: {e}\r\n\r\n❯ ")
+            await self._stdout.drain()
+
+    async def _handle_wallet(self):
+        """Handle wallet command - show wallet info."""
+        try:
+            if not self._username:
+                self._stdout.write("❌ Username required for wallet operations\r\n\r\n❯ ")
+                await self._stdout.drain()
+                return
+            
+            from poker.wallet import get_wallet_manager
+            wallet_manager = get_wallet_manager()
+            
+            wallet_info = wallet_manager.format_wallet_info(self._username)
+            self._stdout.write(f"{wallet_info}\r\n\r\n❯ ")
+            await self._stdout.drain()
+        except Exception as e:
+            self._stdout.write(f"❌ Error showing wallet: {e}\r\n\r\n❯ ")
+            await self._stdout.drain()
+
+    async def _handle_wallet_command(self, cmd: str):
+        """Handle wallet subcommands."""
+        try:
+            if not self._username:
+                self._stdout.write("❌ Username required for wallet operations\r\n\r\n❯ ")
+                await self._stdout.drain()
+                return
+            
+            parts = cmd.split()
+            if len(parts) < 2:
+                await self._handle_wallet()
+                return
+            
+            subcmd = parts[1].lower()
+            
+            from poker.wallet import get_wallet_manager
+            wallet_manager = get_wallet_manager()
+            
+            if subcmd == "history":
+                history = wallet_manager.format_transaction_history(self._username, 15)
+                self._stdout.write(f"{history}\r\n\r\n❯ ")
+                
+            elif subcmd == "actions":
+                actions = wallet_manager.get_action_history(self._username, 20)
+                self._stdout.write(f"{Colors.BOLD}{Colors.CYAN}🎮 Recent Game Actions{Colors.RESET}\r\n")
+                self._stdout.write("=" * 50 + "\r\n")
+                
+                if not actions:
+                    self._stdout.write(f"{Colors.DIM}No game actions found.{Colors.RESET}\r\n")
+                else:
+                    for action in actions:
+                        import time
+                        timestamp = time.strftime("%m-%d %H:%M", time.localtime(action['timestamp']))
+                        action_type = action['action_type'].replace('_', ' ').title()
+                        amount = action['amount']
+                        room = action['room_code']
+                        
+                        line = f"  {timestamp} | {action_type:<15} | ${amount:<6} | Room: {room}"
+                        if action['details']:
+                            line += f"\r\n    {Colors.DIM}{action['details']}{Colors.RESET}"
+                        
+                        self._stdout.write(line + "\r\n")
+                
+                self._stdout.write("\r\n❯ ")
+                
+            elif subcmd == "leaderboard":
+                leaderboard = wallet_manager.get_leaderboard()
+                self._stdout.write(f"{leaderboard}\r\n\r\n❯ ")
+                
+            elif subcmd == "add":
+                # Claim hourly bonus
+                success, message = wallet_manager.claim_hourly_bonus(self._username)
+                self._stdout.write(f"{message}\r\n\r\n❯ ")
+                        
+            else:
+                self._stdout.write(f"❌ Unknown wallet command: {subcmd}\r\n")
+                self._stdout.write("💡 Available: history, actions, leaderboard, add\r\n\r\n❯ ")
+            
+            await self._stdout.drain()
+            
+        except Exception as e:
+            self._stdout.write(f"❌ Error in wallet command: {e}\r\n\r\n❯ ")
             await self._stdout.drain()
 
     async def _show_whoami(self):
@@ -1017,7 +1131,7 @@ class RoomSession:
                 room.game_in_progress = True
                 try:
                     from poker.game import Game
-                    game = Game(players)
+                    game = Game(players, room.pm)  # Pass PlayerManager for logging
                     result = await game.start_round()
 
                     # broadcast results to sessions in this room
