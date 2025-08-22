@@ -176,12 +176,25 @@ class TerminalUI:
         # Show all hands if requested (at end of round)
         if show_all_hands:
             all_hands = game_state.get('all_hands', {})
+            hand_evaluations = game_state.get('hands', {})  # Get hand evaluations if available
+            
             if all_hands:
                 out.append(f"{Colors.BOLD}{Colors.MAGENTA}🎴 All Players' Hands:{Colors.RESET}")
                 for player_name, hand in all_hands.items():
                     hand_cards = cards_horizontal(hand)
                     indicator = "👤" if player_name == self.player_name else "🎭"
-                    out.append(f"   {indicator} {Colors.BOLD}{player_name}{Colors.RESET}:")
+                    
+                    # Get hand description if available
+                    hand_desc = ""
+                    if hand_evaluations and player_name in hand_evaluations:
+                        try:
+                            from poker.game import hand_description
+                            hand_rank, tiebreakers = hand_evaluations[player_name]
+                            hand_desc = f" ({hand_description(hand_rank, tiebreakers)})"
+                        except Exception:
+                            pass
+                    
+                    out.append(f"   {indicator} {Colors.BOLD}{player_name}{Colors.RESET}{Colors.DIM}{hand_desc}{Colors.RESET}:")
                     for line in hand_cards.split('\n'):
                         out.append(f"     {line}")
                     out.append("")
