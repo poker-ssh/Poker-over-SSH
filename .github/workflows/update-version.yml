@@ -25,7 +25,7 @@ jobs:
       uses: actions/checkout@v4
       with:
         # Use a token that can create PR
-        token: ${{ secrets.PAT_TOKEN }}
+        token: ${{ secrets.GITHUB_TOKEN }}
         ref: main
         fetch-depth: 0
         
@@ -89,24 +89,11 @@ jobs:
         if git diff --staged --quiet; then
           echo "No changes to commit"
         else
-          # Create and push to a version-update branch first
-          BRANCH_NAME="version-update-${{ steps.version_info.outputs.version }}-$(date +%s)"
-          git checkout -b "$BRANCH_NAME"
           git commit -m "chore: update version to ${{ steps.version_info.outputs.version }}"
-          git push origin "$BRANCH_NAME"
-          
-          # Create pull request and auto-merge using GitHub CLI
-          gh pr create \
-            --title "Auto-update version to ${{ steps.version_info.outputs.version }}" \
-            --body "Automated version update from release ${{ steps.version_info.outputs.version }}" \
-            --head "$BRANCH_NAME" \
-            --base main
-          
-          # Auto-merge the PR immediately
-          gh pr merge "$BRANCH_NAME" --merge --admin
+          git push origin HEAD:main
         fi
       env:
-        GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         
     - name: Create version info summary
       run: |
