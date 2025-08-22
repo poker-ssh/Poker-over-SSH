@@ -179,50 +179,61 @@ class PokerAI:
     
     def _get_position_strength(self, game_state: Dict[str, Any]) -> float:
         """Calculate position strength (later position = higher value)"""
-        players = game_state.get('players', [])
-        if not players:
-            return 0.5
-        
-        # Find our position
-        player_names = [p.get('name', '') for p in players if p.get('state') == 'active']
         try:
-            our_position = player_names.index(self.player.name)
-            total_players = len(player_names)
-            # Later position is better (0.3 for early, 1.0 for button)
-            return 0.3 + 0.7 * (our_position / max(total_players - 1, 1))
-        except ValueError:
+            players = game_state.get('players', [])
+            if not players:
+                return 0.5
+            
+            # Find our position
+            player_names = [p.get('name', '') for p in players if p.get('state') == 'active']
+            try:
+                our_position = player_names.index(self.player.name)
+                total_players = len(player_names)
+                # Later position is better (0.3 for early, 1.0 for button)
+                return 0.3 + 0.7 * (our_position / max(total_players - 1, 1))
+            except (ValueError, IndexError):
+                return 0.5
+        except:
             return 0.5
     
     def _analyze_betting_pattern(self, game_state: Dict[str, Any]) -> Dict[str, float]:
         """Analyze opponents' betting patterns"""
-        bets = game_state.get('bets', {})
-        pot = game_state.get('pot', 0)
-        
-        analysis = {
-            'aggression_level': 0.5,  # 0 = passive, 1 = very aggressive
-            'number_of_callers': 0,
-            'number_of_raisers': 0,
-            'max_bet_ratio': 0.0  # Max bet as ratio of pot
-        }
-        
-        if not bets:
+        try:
+            bets = game_state.get('bets', {}) or {}
+            pot = game_state.get('pot', 0) or 0
+            
+            analysis = {
+                'aggression_level': 0.5,  # 0 = passive, 1 = very aggressive
+                'number_of_callers': 0,
+                'number_of_raisers': 0,
+                'max_bet_ratio': 0.0  # Max bet as ratio of pot
+            }
+            
+            if not bets:
+                return analysis
+            
+            max_bet = max(bets.values()) if bets else 0
+            my_bet = bets.get(self.player.name, 0)
+            
+            for player_name, bet in bets.items():
+                if player_name != self.player.name and bet > 0:
+                    if bet == max_bet and bet > 0:
+                        analysis['number_of_callers'] += 1
+                    if bet > my_bet:
+                        analysis['number_of_raisers'] += 1
+            
+            if pot > 0 and max_bet > 0:
+                analysis['max_bet_ratio'] = max_bet / pot
+                analysis['aggression_level'] = min(analysis['max_bet_ratio'], 1.0)
+            
             return analysis
-        
-        max_bet = max(bets.values()) if bets else 0
-        my_bet = bets.get(self.player.name, 0)
-        
-        for player_name, bet in bets.items():
-            if player_name != self.player.name and bet > 0:
-                if bet == max_bet and bet > 0:
-                    analysis['number_of_callers'] += 1
-                if bet > my_bet:
-                    analysis['number_of_raisers'] += 1
-        
-        if pot > 0 and max_bet > 0:
-            analysis['max_bet_ratio'] = max_bet / pot
-            analysis['aggression_level'] = min(analysis['max_bet_ratio'], 1.0)
-        
-        return analysis
+        except:
+            return {
+                'aggression_level': 0.5,
+                'number_of_callers': 0,
+                'number_of_raisers': 0,
+                'max_bet_ratio': 0.0
+            }
     
     def _should_bluff(self, hand_strength: float, position_strength: float, 
                      betting_analysis: Dict[str, float]) -> bool:
@@ -248,104 +259,130 @@ class PokerAI:
         # Add a small random delay to simulate thinking
         await asyncio.sleep(random.uniform(0.3, 0.8))
         
-        # Extract game state information
-        community = game_state.get('community', [])
-        bets = game_state.get('bets', {})
-        pot = game_state.get('pot', 0)
-        chips = self.player.chips
-        
-        # Calculate betting situation
-        current_bet = max(bets.values()) if bets else 0
-        my_bet = bets.get(self.player.name, 0)
-        call_amount = max(current_bet - my_bet, 0)
-        
-        # If we don't have enough money to call, fold or go all-in
-        if call_amount > chips:
-            # Go all-in with strong hands, fold otherwise
+        try:
+            # Extract game state information with safe defaults
+            community = game_state.get('community', []) or []
+            bets = game_state.get('bets', {}) or {}
+            pot = game_state.get('pot', 0) or 0
+            players = game_state.get('players', []) or []
+            chips = getattr(self.player, 'chips', 1000)
+            
+            # Ensure we have a valid hand
+            if not hasattr(self.player, 'hand') or not self.player.hand:
+                return {'action': 'fold', 'amount': 0}
+            
+            # Calculate betting situation
+            current_bet = max(bets.values()) if bets else 0
+            my_bet = bets.get(self.player.name, 0)
+            call_amount = max(current_bet - my_bet, 0)
+            
+            # If we don't have enough money to call, fold or go all-in
+            if call_amount > chips:
+                # Go all-in with strong hands, fold otherwise
+                hand_strength = self._evaluate_hand_strength(self.player.hand, community)
+                if hand_strength > 0.7:
+                    return {'action': 'bet', 'amount': chips}
+                return {'action': 'fold', 'amount': 0}
+            
+            # Evaluate our situation
             hand_strength = self._evaluate_hand_strength(self.player.hand, community)
-            if hand_strength > 0.7:
-                return {'action': 'bet', 'amount': chips}
-            return {'action': 'fold', 'amount': 0}
-        
-        # Evaluate our situation
-        hand_strength = self._evaluate_hand_strength(self.player.hand, community)
-        position_strength = self._get_position_strength(game_state)
-        betting_analysis = self._analyze_betting_pattern(game_state)
-        pot_odds = self._calculate_pot_odds(call_amount, pot) if call_amount > 0 else float('inf')
-        
-        # Adjust hand strength for position and opponent aggression
-        adjusted_strength = hand_strength
-        adjusted_strength += (position_strength - 0.5) * 0.1  # Position adjustment
-        adjusted_strength -= betting_analysis['aggression_level'] * 0.05  # Tighter against aggression
-        
-        # Decision logic
-        
-        # No bet to us - we can check or bet
-        if call_amount == 0:
-            if adjusted_strength > 0.7:
-                # Strong hand - bet for value
-                bet_size = int(pot * 0.6 * self.aggression_factor)
-                bet_size = min(bet_size, chips, pot)
-                if bet_size > 0:
-                    return {'action': 'bet', 'amount': bet_size}
-            elif adjusted_strength > 0.5:
-                # Medium hand - smaller bet or check
-                if random.random() < 0.4:
-                    bet_size = int(pot * 0.3)
-                    bet_size = min(bet_size, chips, pot // 2)
+            position_strength = self._get_position_strength(game_state)
+            betting_analysis = self._analyze_betting_pattern(game_state)
+            pot_odds = self._calculate_pot_odds(call_amount, pot) if call_amount > 0 else float('inf')
+            
+            # Adjust hand strength for position and opponent aggression
+            adjusted_strength = hand_strength
+            adjusted_strength += (position_strength - 0.5) * 0.1  # Position adjustment
+            adjusted_strength -= betting_analysis['aggression_level'] * 0.05  # Tighter against aggression
+            
+            # Decision logic
+            
+            # No bet to us - we can check or bet
+            if call_amount == 0:
+                if adjusted_strength > 0.7:
+                    # Strong hand - bet for value
+                    bet_size = int(pot * 0.6 * self.aggression_factor)
+                    bet_size = min(bet_size, chips, pot)
                     if bet_size > 0:
                         return {'action': 'bet', 'amount': bet_size}
-            elif self._should_bluff(hand_strength, position_strength, betting_analysis):
-                # Bluff attempt
-                bet_size = int(pot * 0.5)
-                bet_size = min(bet_size, chips, pot)
-                if bet_size > 0:
-                    return {'action': 'bet', 'amount': bet_size}
+                elif adjusted_strength > 0.5:
+                    # Medium hand - smaller bet or check
+                    if random.random() < 0.4:
+                        bet_size = int(pot * 0.3)
+                        bet_size = min(bet_size, chips, pot // 2)
+                        if bet_size > 0:
+                            return {'action': 'bet', 'amount': bet_size}
+                elif self._should_bluff(hand_strength, position_strength, betting_analysis):
+                    # Bluff attempt
+                    bet_size = int(pot * 0.5)
+                    bet_size = min(bet_size, chips, pot)
+                    if bet_size > 0:
+                        return {'action': 'bet', 'amount': bet_size}
+                
+                return {'action': 'call', 'amount': 0}  # Check
             
-            return {'action': 'call', 'amount': 0}  # Check
-        
-        # There's a bet to us
-        
-        # Very strong hands - raise
-        if adjusted_strength > 0.8:
-            raise_size = int(current_bet * (1.5 + self.aggression_factor * 0.5))
-            raise_size = min(raise_size, chips)
-            if raise_size > current_bet:
-                return {'action': 'bet', 'amount': raise_size}
-            else:
-                return {'action': 'call', 'amount': 0}
-        
-        # Strong hands - call or raise based on pot odds and aggression
-        elif adjusted_strength > 0.6:
-            if pot_odds > 2.0 or random.random() < self.aggression_factor * 0.3:
-                if random.random() < 0.3:  # Sometimes raise with strong hands
-                    raise_size = int(current_bet * 1.5)
-                    raise_size = min(raise_size, chips)
-                    if raise_size > current_bet:
-                        return {'action': 'bet', 'amount': raise_size}
-                return {'action': 'call', 'amount': 0}
-        
-        # Medium hands - consider pot odds
-        elif adjusted_strength > 0.4:
-            if pot_odds > 3.0:  # Good pot odds
-                return {'action': 'call', 'amount': 0}
-            elif pot_odds > 2.0 and position_strength > 0.6:
-                return {'action': 'call', 'amount': 0}
-        
-        # Weak hands - fold unless great pot odds or bluff opportunity
-        elif adjusted_strength > 0.1:  # Lowered threshold
-            if pot_odds > 8.0:  # Very excellent pot odds
-                return {'action': 'call', 'amount': 0}
-            elif self._should_bluff(hand_strength, position_strength, betting_analysis):
-                # Bluff raise
-                raise_size = int(current_bet * 2)
+            # There's a bet to us
+            
+            # Very strong hands - raise
+            if adjusted_strength > 0.8:
+                raise_size = int(current_bet * (1.5 + self.aggression_factor * 0.5))
                 raise_size = min(raise_size, chips)
-                if raise_size > current_bet and raise_size <= chips * 0.3:  # Don't risk too much
+                if raise_size > current_bet:
                     return {'action': 'bet', 'amount': raise_size}
-        
-        # Very weak hands - only call with exceptional pot odds
-        elif pot_odds > 15.0:  # Only with extremely good odds
-            return {'action': 'call', 'amount': 0}
-        
-        # Default: fold weak hands
-        return {'action': 'fold', 'amount': 0}
+                else:
+                    return {'action': 'call', 'amount': 0}
+            
+            # Strong hands - call or raise based on pot odds and aggression
+            elif adjusted_strength > 0.6:
+                if pot_odds > 2.0 or random.random() < self.aggression_factor * 0.3:
+                    if random.random() < 0.3:  # Sometimes raise with strong hands
+                        raise_size = int(current_bet * 1.5)
+                        raise_size = min(raise_size, chips)
+                        if raise_size > current_bet:
+                            return {'action': 'bet', 'amount': raise_size}
+                    return {'action': 'call', 'amount': 0}
+            
+            # Medium hands - consider pot odds
+            elif adjusted_strength > 0.4:
+                if pot_odds > 3.0:  # Good pot odds
+                    return {'action': 'call', 'amount': 0}
+                elif pot_odds > 2.0 and position_strength > 0.6:
+                    return {'action': 'call', 'amount': 0}
+            
+            # Weak hands - fold unless great pot odds or bluff opportunity
+            elif adjusted_strength > 0.1:  # Lowered threshold
+                if pot_odds > 8.0:  # Very excellent pot odds
+                    return {'action': 'call', 'amount': 0}
+                elif self._should_bluff(hand_strength, position_strength, betting_analysis):
+                    # Bluff raise
+                    raise_size = int(current_bet * 2)
+                    raise_size = min(raise_size, chips)
+                    if raise_size > current_bet and raise_size <= chips * 0.3:  # Don't risk too much
+                        return {'action': 'bet', 'amount': raise_size}
+            
+            # Very weak hands - only call with exceptional pot odds
+            elif pot_odds > 15.0:  # Only with extremely good odds
+                return {'action': 'call', 'amount': 0}
+            
+            # Default: fold weak hands
+            return {'action': 'fold', 'amount': 0}
+            
+        except Exception as e:
+            # If anything goes wrong, make a safe conservative decision
+            # Try to call small bets, fold large ones
+            try:
+                bets = game_state.get('bets', {}) or {}
+                current_bet = max(bets.values()) if bets else 0
+                my_bet = bets.get(self.player.name, 0) if bets else 0
+                call_amount = max(current_bet - my_bet, 0)
+                chips = getattr(self.player, 'chips', 1000)
+                
+                if call_amount == 0:
+                    return {'action': 'call', 'amount': 0}  # Check
+                elif call_amount <= chips * 0.1:  # Small bet relative to stack
+                    return {'action': 'call', 'amount': 0}
+                else:
+                    return {'action': 'fold', 'amount': 0}
+            except:
+                # Ultimate fallback
+                return {'action': 'fold', 'amount': 0}
