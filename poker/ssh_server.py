@@ -51,6 +51,28 @@ class RoomSession:
         # Start the input reading task
         self._reader_task = asyncio.create_task(self._read_input())
 
+    def _is_session_active(self, session) -> bool:
+        """Check if a session is still active and connected."""
+        try:
+            # Check basic session state
+            if not hasattr(session, '_running') or not session._running:
+                return False
+            if hasattr(session, '_should_exit') and session._should_exit:
+                return False
+            
+            # Try to check if the connection is still alive
+            if hasattr(session, '_stdout') and session._stdout:
+                # If we can't write to stdout, the connection is likely dead
+                try:
+                    if hasattr(session._stdout, 'is_closing') and session._stdout.is_closing():
+                        return False
+                except:
+                    return False
+            
+            return True
+        except:
+            return False
+
     async def _stop(self):
         """Stop the session."""
         self._should_exit = True
@@ -167,7 +189,7 @@ class RoomSession:
         if cmd.lower().startswith("seat "):
             # Reject seat commands with arguments
             self._stdout.write(f"❌ {Colors.RED}The 'seat' command no longer accepts arguments.{Colors.RESET}\r\n")
-            self._stdout.write(f"💡 Just type '{Colors.GREEN}seat{Colors.RESET}' to use your SSH username ({self._username or 'not available'})\r\n\r\n❯ ")
+            self._stdout.write(f"💡 Just type '{Colors.GREEN}seat{Colors.RESET}' to use your SSH username ({self._username or 'not available'})\r\n\r\n")
             self._stdout.write(f"💡 Or disconnect and connect with a different username: {Colors.GREEN}ssh <other_username>@<server>{Colors.RESET}\r\n\r\n❯ ")
             await self._stdout.drain()
             return
@@ -544,6 +566,9 @@ class RoomSession:
                 await self._stdout.drain()
                 return
             
+            # Clean up any dead sessions first
+            self._cleanup_dead_sessions(room)
+            
             players = room.pm.players
             if not players:
                 self._stdout.write(f"{Colors.DIM}No players registered in this room.{Colors.RESET}\r\n")
@@ -575,6 +600,19 @@ class RoomSession:
         except Exception:
             pass
 
+    def _cleanup_dead_sessions(self, room):
+        """Clean up any dead sessions from the room."""
+        sessions_to_remove = []
+        for session, player in room.session_map.items():
+            if not self._is_session_active(session):
+                sessions_to_remove.append(session)
+                logging.info(f"Found dead session for player {player.name}")
+        
+        for session in sessions_to_remove:
+            if session in room.session_map:
+                del room.session_map[session]
+                logging.info(f"Cleaned up dead session from room")
+
     async def _handle_seat(self, cmd: str):
         """Handle seat command in current room."""
         try:
@@ -589,6 +627,9 @@ class RoomSession:
                 await self._stdout.drain()
                 return
             
+            # Clean up any dead sessions first
+            self._cleanup_dead_sessions(room)
+            
             # Always use SSH username - no name arguments accepted
             if not self._username:
                 self._stdout.write(f"❌ {Colors.RED}No SSH username available. Please connect with: ssh <username>@<server>{Colors.RESET}\r\n\r\n❯ ")
@@ -598,7 +639,7 @@ class RoomSession:
             name = self._username
             
             # Debug: Show current session mappings
-            logging.info(f"Seat attempt by {name}. Current sessions in room: {[(s._username if hasattr(s, '_username') else 'no-username', p.name) for s, p in room.session_map.items()]}")
+            #logging.debug(f"Seat attempt by {name}. Current sessions in room: {[(s._username if hasattr(s, '_username') else 'no-username', p.name) for s, p in room.session_map.items()]}")
             
             # Check if THIS session is already seated
             if self in room.session_map:
@@ -608,19 +649,25 @@ class RoomSession:
                 return
             
             # Check if username is already taken by a DIFFERENT active session
+            sessions_to_remove = []
             for session, player in room.session_map.items():
                 if player.name == name and session != self:
-                    # Double-check if the other session is still active
-                    if hasattr(session, '_running') and session._running and not session._should_exit:
+                    # Check if the other session is still active
+                    if self._is_session_active(session):
                         self._stdout.write(f"❌ {Colors.RED}Username '{name}' is already taken by another active player in this room.{Colors.RESET}\r\n")
                         self._stdout.write(f"💡 Please disconnect and connect with a different username: {Colors.GREEN}ssh <other_username>@<server>{Colors.RESET}\r\n\r\n❯ ")
                         await self._stdout.drain()
                         return
                     else:
-                        # Session is inactive, remove it
-                        logging.info(f"Removing inactive session for {name}")
-                        del room.session_map[session]
-                        break
+                        # Session is inactive, mark for removal
+                        logging.info(f"Marking inactive session for removal: {name}")
+                        sessions_to_remove.append(session)
+            
+            # Remove inactive sessions
+            for session in sessions_to_remove:
+                if session in room.session_map:
+                    del room.session_map[session]
+                    logging.info(f"Removed inactive session from room session_map")
             
             # Register player in the room
             player = await self._register_player_for_room(name, room)
