@@ -841,13 +841,19 @@ class RoomSession:
 
     async def _register_player_for_room(self, name: str, room):
         """Register a player for the session in the given room."""
+        logging.debug(f"Registering player {name} for room")
+        
         existing = next((p for p in room.pm.players if p.name == name), None)
         if existing is not None:
+            logging.debug(f"Player {name} already exists, using existing player")
             player = existing
         else:
+            logging.debug(f"Creating new player {name}")
             player = room.pm.register_player(name)
+            logging.debug(f"Player {name} created successfully")
 
         room.session_map[self] = player
+        logging.debug(f"Player {name} mapped to session")
 
         async def actor(game_state: Dict[str, Any]):
             try:
@@ -1110,6 +1116,8 @@ class RoomSession:
                 min_players = 4
                 current_count = len(total_players)
                 
+                logging.debug(f"Current players: {current_count}, minimum needed: {min_players}")
+                
                 if current_count < min_players:
                     ai_names = ["AI_Alice", "AI_Bob", "AI_Charlie", "AI_David", "AI_Eve"]
                     existing_ai_names = {p.name for p in total_players if p.is_ai}
@@ -1118,6 +1126,8 @@ class RoomSession:
                         # find unused AI name
                         ai_name = next((name for name in ai_names if name not in existing_ai_names), f"AI_Player_{i+1}")
                         existing_ai_names.add(ai_name)
+                        
+                        logging.debug(f"Adding AI player: {ai_name}")
                         
                         # Create AI player
                         ai_player = room.pm.register_player(ai_name, is_ai=True, chips=200)
@@ -1128,11 +1138,17 @@ class RoomSession:
                         ai_player.actor = ai.decide_action
                         
                 players = list(room.pm.players)
+                logging.debug(f"Final player list: {[p.name for p in players]}")
+                
                 room.game_in_progress = True
                 try:
                     from poker.game import Game
+                    logging.debug("Creating game instance")
                     game = Game(players, room.pm)  # Pass PlayerManager for logging
+                    
+                    logging.debug("Starting game round")
                     result = await game.start_round()
+                    logging.debug(f"Game round completed: {result}")
 
                     # broadcast results to sessions in this room
                     for session, player in list(room.session_map.items()):
@@ -1211,6 +1227,7 @@ class RoomSession:
                             session._stdout.write(f"{Colors.YELLOW}{'='*30}{Colors.RESET}\r\n\r\n❯ ")
                             await session._stdout.drain()
                         except Exception as e:
+                            logging.error(f"Error broadcasting game results to {player.name}: {e}")
                             # Fallback to simple display or skip if connection is closed
                             try:
                                 session._stdout.write(f"Round finished. Winners: {', '.join(result.get('winners', []))}\r\n❯ ")
@@ -1220,10 +1237,19 @@ class RoomSession:
                                 if session in room.session_map:
                                     del room.session_map[session]
 
+                except Exception as e:
+                    logging.error(f"Error during game execution: {e}")
+                    import traceback
+                    logging.error(traceback.format_exc())
+                    raise
                 finally:
                     room.game_in_progress = False
+                    logging.debug("Game finished, game_in_progress set to False")
                     
         except Exception as e:
+            logging.error(f"Failed to start game: {e}")
+            import traceback
+            logging.error(traceback.format_exc())
             self._stdout.write(f"❌ Failed to start game: {e}\r\n\r\n❯ ")
             await self._stdout.drain()
 

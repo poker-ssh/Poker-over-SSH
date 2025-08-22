@@ -4,6 +4,7 @@ Wallet management for Poker-over-SSH.
 Provides persistent wallet functionality with database backing.
 """
 
+import logging
 import uuid
 import time
 from typing import Dict, Any, List, Optional, Tuple
@@ -23,30 +24,42 @@ class WalletManager:
     
     def get_player_chips_for_game(self, player_name: str, buy_in: int = 200) -> int:
         """Get chips for a player to enter a game."""
+        logging.debug(f"WalletManager.get_player_chips_for_game: player={player_name}, buy_in={buy_in}")
+        
         wallet = self.get_player_wallet(player_name)
+        logging.debug(f"Player {player_name} wallet balance: ${wallet['balance']}")
         
         if wallet['balance'] < buy_in:
             # Not enough funds for full buy-in, use what they have
             chips = wallet['balance']
             if chips < 1:
                 # Add minimum funds if completely broke
+                logging.debug(f"Player {player_name} broke, adding minimum buy-in assistance")
                 self.add_funds(player_name, buy_in, "Minimum buy-in assistance")
                 chips = buy_in
         else:
             chips = buy_in
         
+        logging.debug(f"Player {player_name} buying in for ${chips}")
+        
         # Deduct buy-in from wallet
         new_balance = wallet['balance'] - chips
-        self.db.update_wallet_balance(
-            player_name, new_balance, 'GAME_BUY_IN',
-            f"Bought into game for ${chips}"
-        )
-        
-        # Log the action
-        self.db.log_action(
-            player_name, "game", "BUY_IN", chips,
-            details=f"Bought into game for ${chips}"
-        )
+        try:
+            self.db.update_wallet_balance(
+                player_name, new_balance, 'GAME_BUY_IN',
+                f"Bought into game for ${chips}"
+            )
+            logging.debug(f"Updated wallet balance for {player_name}: ${new_balance}")
+            
+            # Log the action
+            self.db.log_action(
+                player_name, "game", "BUY_IN", chips,
+                details=f"Bought into game for ${chips}"
+            )
+            logging.debug(f"Logged buy-in action for {player_name}")
+        except Exception as e:
+            logging.error(f"Database error during buy-in for {player_name}: {e}")
+            raise
         
         return chips
     

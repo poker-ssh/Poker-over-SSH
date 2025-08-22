@@ -146,6 +146,9 @@ class DatabaseManager:
                     VALUES (?, 1000, 0, 0, 0, ?, ?)
                 """, (player_name, now, now))
                 
+                # Log transaction separately after wallet exists (commit the wallet first)
+                cursor.connection.commit()
+                
                 self.log_transaction(
                     player_name, 'WALLET_CREATED', 1000, 0, 1000,
                     'New wallet created with starting balance'

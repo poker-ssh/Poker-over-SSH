@@ -12,6 +12,7 @@ Now integrated with persistent wallet system.
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from typing import Any, Callable, List, Optional
 
@@ -53,9 +54,12 @@ class PlayerManager:
         self.room_code = room_code
 
     def register_player(self, name: str, is_ai: bool = False, chips: int = 200) -> Player:
+        logging.debug(f"PlayerManager.register_player: name={name}, is_ai={is_ai}, chips={chips}")
+        
         # Check if player already exists
         existing = next((p for p in self.players if p.name == name), None)
         if existing:
+            logging.debug(f"Player {name} already exists, returning existing player")
             return existing
         
         # Get chips from wallet for human players
@@ -63,28 +67,45 @@ class PlayerManager:
             try:
                 from poker.wallet import get_wallet_manager
                 wallet_manager = get_wallet_manager()
+                logging.debug(f"Getting chips for human player {name} from wallet")
                 chips = wallet_manager.get_player_chips_for_game(name, chips)
+                logging.debug(f"Player {name} has {chips} chips from wallet")
             except ImportError:
                 # Fallback if wallet system not available
+                logging.debug("Wallet system not available, using default chips")
+                pass
+            except Exception as e:
+                logging.error(f"Error getting chips from wallet for {name}: {e}")
+                # Continue with default chips
                 pass
         
+        logging.debug(f"Creating new Player object for {name}")
         player = Player(name, is_ai, chips=chips)
         player.initial_chips = chips
         player.round_id = str(uuid.uuid4())  # Generate unique round ID
-        self.players.append(player)
+        logging.debug(f"Player {name} created with round_id={player.round_id}")
         
-        # Log player registration
-        try:
-            from poker.database import get_database
-            db = get_database()
-            db.log_action(
-                name, self.room_code, "PLAYER_JOINED", chips,
-                round_id=player.round_id,
-                details=f"Joined game with ${chips} chips"
-            )
-        except ImportError:
-            # Fallback if database system not available
-            pass
+        self.players.append(player)
+        logging.debug(f"Player {name} added to players list. Total players: {len(self.players)}")
+        
+        # Log player registration only for human players (who have wallets)
+        if not is_ai:
+            try:
+                from poker.database import get_database
+                db = get_database()
+                db.log_action(
+                    name, self.room_code, "PLAYER_JOINED", chips,
+                    round_id=player.round_id,
+                    details=f"Joined game with ${chips} chips"
+                )
+                logging.debug(f"Logged PLAYER_JOINED action for human player {name}")
+            except ImportError:
+                # Fallback if database system not available
+                pass
+            except Exception as e:
+                logging.error(f"Failed to log player join action for {name}: {e}")
+        else:
+            logging.debug(f"Skipping action logging for AI player {name} (no wallet)")
         
         return player
 
@@ -128,6 +149,11 @@ class PlayerManager:
         if not player:
             return
         
+        # Only log actions for human players (who have wallets)
+        if player.is_ai:
+            logging.debug(f"Skipping action logging for AI player {player_name}")
+            return
+        
         try:
             from poker.database import get_database
             db = get_database()
@@ -135,6 +161,9 @@ class PlayerManager:
                 player_name, self.room_code, action_type, amount,
                 round_id=player.round_id, game_phase=game_phase, details=details
             )
+            logging.debug(f"Logged {action_type} action for player {player_name}")
         except ImportError:
             # Fallback if database system not available
             pass
+        except Exception as e:
+            logging.error(f"Failed to log action {action_type} for {player_name}: {e}")
