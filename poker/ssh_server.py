@@ -8,12 +8,19 @@ import logging
 from typing import Optional, Dict, Any
 from poker.terminal_ui import Colors
 from poker.rooms import RoomManager
+from poker.server_info import get_server_info
 
 
 try:
     import asyncssh
 except Exception:  # pragma: no cover - runtime dependency
     asyncssh = None
+
+
+def get_ssh_connection_string() -> str:
+    """Get the SSH connection string for this server"""
+    server_info = get_server_info()
+    return server_info['ssh_connection_string']
 
 
 class RoomSession:
@@ -35,14 +42,19 @@ class RoomSession:
         # Send welcome message
         try:
             from poker.terminal_ui import Colors
-            self._stdout.write(f"{Colors.BOLD}{Colors.YELLOW}🎰 Welcome to Poker-over-SSH! 🎰{Colors.RESET}\r\n")
+            from poker.server_info import get_server_info, format_motd
+            
+            server_info = get_server_info()
+            motd = format_motd(server_info)
+            
+            self._stdout.write(motd + "\r\n")
             if username:
                 self._stdout.write(f"🎭 Logged in as: {Colors.CYAN}{username}{Colors.RESET}\r\n")
                 self._stdout.write(f"🏠 Current room: {Colors.GREEN}Default Lobby{Colors.RESET}\r\n")
                 self._stdout.write(f"💡 Type '{Colors.GREEN}help{Colors.RESET}' for commands or '{Colors.GREEN}seat{Colors.RESET}' to join a game.\r\n")
             else:
                 self._stdout.write(f"🏠 Current room: {Colors.GREEN}Default Lobby{Colors.RESET}\r\n")
-                self._stdout.write(f"⚠️  {Colors.YELLOW}No SSH username detected. To play, reconnect with: ssh <username>@<server>{Colors.RESET}\r\n")
+                self._stdout.write(f"⚠️  {Colors.YELLOW}No SSH username detected. To play, reconnect with: ssh <username>@{server_info['ssh_connection_string']}{Colors.RESET}\r\n")
                 self._stdout.write(f"💡 Type '{Colors.GREEN}help{Colors.RESET}' for commands.\r\n")
             self._stdout.write("❯ ")
         except Exception:
@@ -178,6 +190,10 @@ class RoomSession:
             await self._show_whoami()
             return
 
+        if cmd.lower() == "server":
+            await self._show_server_info()
+            return
+
         if cmd.lower() == "players":
             await self._show_players()
             return
@@ -190,7 +206,7 @@ class RoomSession:
             # Reject seat commands with arguments
             self._stdout.write(f"❌ {Colors.RED}The 'seat' command no longer accepts arguments.{Colors.RESET}\r\n")
             self._stdout.write(f"💡 Just type '{Colors.GREEN}seat{Colors.RESET}' to use your SSH username ({self._username or 'not available'})\r\n\r\n")
-            self._stdout.write(f"💡 Or disconnect and connect with a different username: {Colors.GREEN}ssh <other_username>@<server>{Colors.RESET}\r\n\r\n❯ ")
+            self._stdout.write(f"💡 Or disconnect and connect with a different username: {Colors.GREEN}ssh <other_username>@{get_ssh_connection_string()}{Colors.RESET}\r\n\r\n❯ ")
             await self._stdout.drain()
             return
 
@@ -243,6 +259,7 @@ class RoomSession:
             self._stdout.write("🎰 Poker-over-SSH Commands:\r\n")
             self._stdout.write("  help     Show this help\r\n")
             self._stdout.write("  whoami   Show connection info\r\n")
+            self._stdout.write("  server   Show server information\r\n")
             self._stdout.write("  seat     Claim a seat using your SSH username\r\n")
             self._stdout.write("  players  List all players in current room\r\n")
             self._stdout.write("  start    Start a poker round (requires 1+ human players)\r\n")
@@ -552,6 +569,33 @@ class RoomSession:
         except Exception:
             pass
 
+    async def _show_server_info(self):
+        """Show detailed server information."""
+        try:
+            from poker.server_info import get_server_info
+            
+            server_info = get_server_info()
+            
+            self._stdout.write(f"{Colors.BOLD}{Colors.CYAN}🖥️  Server Information{Colors.RESET}\r\n")
+            self._stdout.write("=" * 40 + "\r\n")
+            self._stdout.write(f"📛 Name: {Colors.CYAN}{server_info['server_name']}{Colors.RESET}\r\n")
+            self._stdout.write(f"🌐 Environment: {Colors.GREEN if server_info['server_env'] == 'Public Stable' else Colors.YELLOW}{server_info['server_env']}{Colors.RESET}\r\n")
+            self._stdout.write(f"📍 Host: {Colors.BOLD}{server_info['server_host']}:{server_info['server_port']}{Colors.RESET}\r\n")
+            self._stdout.write(f"🔗 Connect: {Colors.DIM}ssh <username>@{server_info['ssh_connection_string']}{Colors.RESET}\r\n")
+            
+            if server_info['version'] != 'dev':
+                self._stdout.write(f"📦 Version: {Colors.GREEN}{server_info['version']}{Colors.RESET}\r\n")
+                self._stdout.write(f"📅 Build Date: {Colors.DIM}{server_info['build_date']}{Colors.RESET}\r\n")
+                self._stdout.write(f"🔗 Commit: {Colors.DIM}{server_info['commit_hash']}{Colors.RESET}\r\n")
+            else:
+                self._stdout.write(f"🚧 {Colors.YELLOW}Development Build{Colors.RESET}\r\n")
+            
+            self._stdout.write("\r\n❯ ")
+            await self._stdout.drain()
+        except Exception as e:
+            self._stdout.write(f"❌ Error getting server info: {e}\r\n\r\n❯ ")
+            await self._stdout.drain()
+
     async def _show_players(self):
         """Show players in current room."""
         try:
@@ -632,7 +676,7 @@ class RoomSession:
             
             # Always use SSH username - no name arguments accepted
             if not self._username:
-                self._stdout.write(f"❌ {Colors.RED}No SSH username available. Please connect with: ssh <username>@<server>{Colors.RESET}\r\n\r\n❯ ")
+                self._stdout.write(f"❌ {Colors.RED}No SSH username available. Please connect with: ssh <username>@{get_ssh_connection_string()}{Colors.RESET}\r\n\r\n❯ ")
                 await self._stdout.drain()
                 return
                 
@@ -655,7 +699,7 @@ class RoomSession:
                     # Check if the other session is still active
                     if self._is_session_active(session):
                         self._stdout.write(f"❌ {Colors.RED}Username '{name}' is already taken by another active player in this room.{Colors.RESET}\r\n")
-                        self._stdout.write(f"💡 Please disconnect and connect with a different username: {Colors.GREEN}ssh <other_username>@<server>{Colors.RESET}\r\n\r\n❯ ")
+                        self._stdout.write(f"💡 Please disconnect and connect with a different username: {Colors.GREEN}ssh <other_username>@{get_ssh_connection_string()}{Colors.RESET}\r\n\r\n❯ ")
                         await self._stdout.drain()
                         return
                     else:
