@@ -1122,20 +1122,39 @@ class RoomSession:
                     ai_names = ["AI_Alice", "AI_Bob", "AI_Charlie", "AI_David", "AI_Eve"]
                     existing_ai_names = {p.name for p in total_players if p.is_ai}
                     
-                    for i in range(min_players - current_count):
-                        # find unused AI name
-                        ai_name = next((name for name in ai_names if name not in existing_ai_names), f"AI_Player_{i+1}")
-                        existing_ai_names.add(ai_name)
+                    # Try to add AI players until we reach minimum
+                    added_ais = 0
+                    for ai_name in ai_names:
+                        if added_ais >= (min_players - current_count):
+                            break
+                        
+                        if ai_name in existing_ai_names:
+                            continue  # AI already exists
+                        
+                        # Check if AI can respawn (if previously broke)
+                        try:
+                            from poker.database import get_database
+                            db = get_database()
+                            if not db.can_ai_respawn(ai_name):
+                                logging.debug(f"AI {ai_name} still on respawn cooldown, skipping")
+                                continue
+                            
+                            # If AI was broke before, mark as respawned
+                            db.respawn_ai(ai_name)
+                        except Exception as e:
+                            logging.error(f"Error checking AI respawn status: {e}")
                         
                         logging.debug(f"Adding AI player: {ai_name}")
                         
-                        # Create AI player
+                        # Create AI player with 200 chips
                         ai_player = room.pm.register_player(ai_name, is_ai=True, chips=200)
                         
                         # Set up AI actor
                         from poker.ai import PokerAI
                         ai = PokerAI(ai_player)
                         ai_player.actor = ai.decide_action
+                        
+                        added_ais += 1
                         
                 players = list(room.pm.players)
                 logging.debug(f"Final player list: {[p.name for p in players]}")

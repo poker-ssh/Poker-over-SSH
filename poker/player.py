@@ -121,23 +121,32 @@ class PlayerManager:
         """Handle end of round - return chips to wallets and log results."""
         try:
             from poker.wallet import get_wallet_manager
+            from poker.database import get_database
             wallet_manager = get_wallet_manager()
+            db = get_database()
             
             for player in self.players:
                 if not player.is_ai and player.round_id:
+                    # Human player - return chips to wallet
                     winnings = player.get_winnings()
                     wallet_manager.return_chips_to_wallet(
                         player.name, player.chips, player.round_id, winnings
                     )
                     
                     # Log final result
-                    from poker.database import get_database
-                    db = get_database()
                     db.log_action(
                         player.name, self.room_code, "ROUND_FINISHED", player.chips,
                         round_id=player.round_id,
                         details=f"Round ended with ${player.chips} chips (${winnings:+} change)"
                     )
+                elif player.is_ai:
+                    # AI player - check if broke and mark for respawn
+                    if player.chips <= 0:
+                        logging.info(f"AI player {player.name} went broke, marking for respawn")
+                        db.mark_ai_broke(player.name)
+                        # Remove broke AI from player list
+                        self.players.remove(player)
+                        logging.info(f"Removed broke AI {player.name} from player list")
         except ImportError:
             # Fallback if wallet/database system not available
             pass

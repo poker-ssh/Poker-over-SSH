@@ -109,6 +109,16 @@ class DatabaseManager:
                 )
             """)
             
+            # Create AI respawn tracking table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS ai_respawns (
+                    ai_name TEXT PRIMARY KEY,
+                    last_broke_time REAL NOT NULL DEFAULT 0,
+                    respawn_time REAL NOT NULL DEFAULT 0,
+                    times_respawned INTEGER NOT NULL DEFAULT 0
+                )
+            """)
+            
             # Create indexes for better performance
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_actions_player ON actions (player_name)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_actions_timestamp ON actions (timestamp)")
@@ -143,20 +153,20 @@ class DatabaseManager:
                 cursor.execute("""
                     INSERT INTO wallets 
                     (player_name, balance, total_winnings, total_losses, games_played, last_activity, created_at)
-                    VALUES (?, 1000, 0, 0, 0, ?, ?)
+                    VALUES (?, 500, 0, 0, 0, ?, ?)
                 """, (player_name, now, now))
                 
                 # Log transaction separately after wallet exists (commit the wallet first)
                 cursor.connection.commit()
                 
                 self.log_transaction(
-                    player_name, 'WALLET_CREATED', 1000, 0, 1000,
+                    player_name, 'WALLET_CREATED', 500, 0, 500,
                     'New wallet created with starting balance'
                 )
                 
                 return {
                     'player_name': player_name,
-                    'balance': 1000,
+                    'balance': 500,
                     'total_winnings': 0,
                     'total_losses': 0,
                     'games_played': 0,
@@ -392,6 +402,44 @@ class DatabaseManager:
             )
             
             return True
+
+    def mark_ai_broke(self, ai_name: str) -> None:
+        """Mark an AI player as broke and set respawn time."""
+        with self.get_cursor() as cursor:
+            now = time.time()
+            respawn_time = now + (30 * 60)  # 30 minutes from now
+            
+            cursor.execute("""
+                INSERT OR REPLACE INTO ai_respawns 
+                (ai_name, last_broke_time, respawn_time, times_respawned)
+                VALUES (?, ?, ?, COALESCE((SELECT times_respawned FROM ai_respawns WHERE ai_name = ?), 0) + 1)
+            """, (ai_name, now, respawn_time, ai_name))
+            
+            logging.info(f"AI {ai_name} marked as broke, will respawn in 30 minutes")
+
+    def can_ai_respawn(self, ai_name: str) -> bool:
+        """Check if an AI player can respawn (30 minutes have passed since broke)."""
+        with self.get_cursor() as cursor:
+            cursor.execute(
+                "SELECT respawn_time FROM ai_respawns WHERE ai_name = ?",
+                (ai_name,)
+            )
+            row = cursor.fetchone()
+            
+            if not row:
+                return True  # Never broke before, can spawn
+            
+            now = time.time()
+            return now >= row['respawn_time']
+
+    def respawn_ai(self, ai_name: str) -> None:
+        """Respawn an AI player (remove from broke list)."""
+        with self.get_cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM ai_respawns WHERE ai_name = ?",
+                (ai_name,)
+            )
+            logging.info(f"AI {ai_name} respawned successfully")
 
 
 # Global database instance

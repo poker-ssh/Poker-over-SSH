@@ -35,8 +35,8 @@ class WalletManager:
         if chips < 1:
             # Add minimum funds if completely broke
             logging.debug(f"Player {player_name} broke, adding minimum starting funds")
-            self.add_funds(player_name, 1000, "Starting funds for broke player")
-            chips = 1000
+            self.add_funds(player_name, 500, "Starting funds for broke player")
+            chips = 500
         
         logging.debug(f"Player {player_name} bringing all ${chips} into game")
         
