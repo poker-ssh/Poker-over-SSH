@@ -950,26 +950,59 @@ class RoomSession:
                             all_hands = result.get('all_hands', {})
                             
                             if hands:
-                                for pname, handval in hands.items():
+                                # Sort players: winners first, then by hand strength
+                                sorted_players = sorted(hands.items(), key=lambda x: (
+                                    x[0] not in winners,  # Winners first (False sorts before True)
+                                    -x[1][0]  # Then by hand rank (higher is better)
+                                ))
+                                
+                                for pname, handval in sorted_players:
                                     hand_rank, tiebreakers = handval
                                     rank_names = {0: 'High Card', 1: 'Pair', 2: 'Two Pair', 3: 'Three of a Kind', 
                                                  4: 'Straight', 5: 'Flush', 6: 'Full House', 7: 'Four of a Kind', 
                                                  8: 'Straight Flush'}
+                                    
+                                    # Create more detailed hand descriptions
                                     rank_name = rank_names.get(hand_rank, f"Rank {hand_rank}")
+                                    if hand_rank == 1 and tiebreakers:  # Pair
+                                        pair_rank = tiebreakers[0]
+                                        pair_names = {11: 'Jacks', 12: 'Queens', 13: 'Kings', 14: 'Aces'}
+                                        rank_name = f"Pair of {pair_names.get(pair_rank, f'{pair_rank}s')}"
+                                    elif hand_rank == 2 and len(tiebreakers) >= 2:  # Two Pair
+                                        high_pair = tiebreakers[0]
+                                        low_pair = tiebreakers[1]
+                                        pair_names = {11: 'Jacks', 12: 'Queens', 13: 'Kings', 14: 'Aces'}
+                                        high_name = pair_names.get(high_pair, f'{high_pair}s')
+                                        low_name = pair_names.get(low_pair, f'{low_pair}s')
+                                        rank_name = f"Two Pair: {high_name} and {low_name}"
+                                    elif hand_rank == 3 and tiebreakers:  # Three of a kind
+                                        trips_rank = tiebreakers[0]
+                                        trips_names = {11: 'Jacks', 12: 'Queens', 13: 'Kings', 14: 'Aces'}
+                                        rank_name = f"Three {trips_names.get(trips_rank, f'{trips_rank}s')}"
+                                    
                                     winner_mark = "👑" if pname in winners else "  "
                                     
-                                    # Find player's current chip count
+                                    # Find player's current chip count and status
                                     player_obj = next((p for p in players if p.name == pname), None)
                                     chip_count = f"${player_obj.chips}" if player_obj else "N/A"
+                                    player_status = ""
+                                    if player_obj:
+                                        if player_obj.state == 'folded':
+                                            player_status = f" {Colors.DIM}(folded){Colors.RESET}"
+                                        elif pname in winners:
+                                            player_status = f" {Colors.BOLD}{Colors.GREEN}(WINNER!){Colors.RESET}"
                                     
                                     # Show hand cards if available
                                     player_cards = all_hands.get(pname, [])
                                     if player_cards:
-                                        from poker.terminal_ui import card_str
+                                        from poker.game import card_str
                                         cards_display = "  ".join(card_str(card) for card in player_cards)
-                                        session._stdout.write(f"{winner_mark} {pname}: {Colors.CYAN}{rank_name}{Colors.RESET} - {cards_display} - {Colors.GREEN}{chip_count}{Colors.RESET}\r\n")
+                                        session._stdout.write(f"{winner_mark} {Colors.BOLD}{pname}{Colors.RESET}: {Colors.CYAN}{Colors.BOLD}{rank_name}{Colors.RESET} - {cards_display} - {Colors.GREEN}{chip_count}{Colors.RESET}{player_status}\r\n")
                                     else:
-                                        session._stdout.write(f"{winner_mark} {pname}: {Colors.CYAN}{rank_name}{Colors.RESET} - {Colors.GREEN}{chip_count}{Colors.RESET}\r\n")
+                                        session._stdout.write(f"{winner_mark} {Colors.BOLD}{pname}{Colors.RESET}: {Colors.CYAN}{Colors.BOLD}{rank_name}{Colors.RESET} - {Colors.GREEN}{chip_count}{Colors.RESET}{player_status}\r\n")
+                            else:
+                                # Fallback if hands data is not available
+                                session._stdout.write(f"   Hand evaluation data not available\r\n")
                             
                             session._stdout.write(f"{Colors.YELLOW}{'='*30}{Colors.RESET}\r\n\r\n❯ ")
                             await session._stdout.drain()

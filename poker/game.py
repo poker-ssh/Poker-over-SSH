@@ -403,8 +403,18 @@ class Game:
         """
         contenders = [p for p in self.players if p.state not in ['folded', 'eliminated']]
         results = {}
+        all_player_results = {}  # Evaluate ALL players for display
         best_val = None
         winners: List[str] = []
+        
+        # Evaluate all players' hands for display purposes
+        for p in self.players:
+            if len(p.hand) == 2 and len(self.community) >= 3:  # Only if we have enough cards
+                seven = p.hand + self.community
+                val = best_hand_from_seven(seven)
+                all_player_results[p.name] = val
+        
+        # Evaluate only contenders for winner determination
         for p in contenders:
             seven = p.hand + self.community
             val = best_hand_from_seven(seven)
@@ -430,7 +440,7 @@ class Game:
                     if i < remainder:
                         winner_player.chips += 1
 
-        return {'winners': winners, 'pot': self.pot, 'hands': results, 'all_hands': {p.name: p.hand for p in self.players}}
+        return {'winners': winners, 'pot': self.pot, 'hands': all_player_results, 'all_hands': {p.name: p.hand for p in self.players}}
 
     def _public_state(self, include_all_hands=False, current_player_name=None) -> Dict[str, Any]:
         state = {
