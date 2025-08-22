@@ -929,7 +929,7 @@ class RoomSession:
                             
                             # Render final view with all hands shown
                             final_view = ui.render(final_state, player_hand=player.hand, 
-                                                 action_history=game.action_history, show_all_hands=True)
+                                                 action_history=game.action_history)
                             session._stdout.write(final_view + "\r\n")
                                 
                             session._stdout.write(f"\r\n🏆 {Colors.BOLD}{Colors.YELLOW}=== ROUND RESULTS ==={Colors.RESET}\r\n")
@@ -995,8 +995,20 @@ class RoomSession:
                                     # Show hand cards if available
                                     player_cards = all_hands.get(pname, [])
                                     if player_cards:
-                                        from poker.game import card_str
-                                        cards_display = "  ".join(card_str(card) for card in player_cards)
+                                        # Format cards with nice suit symbols and colors (same as big cards)
+                                        def format_card_simple(card):
+                                            r, s = card
+                                            names = {11: 'J', 12: 'Q', 13: 'K', 14: 'A'}
+                                            suit_symbols = {'h': '♥', 'd': '♦', 'c': '♣', 's': '♠'}
+                                            # Use same colors as big cards
+                                            suit_colors = {'h': Colors.RED, 'd': Colors.RED, 'c': Colors.BLACK, 's': Colors.BLACK}
+                                            rank = names.get(r, str(r))
+                                            symbol = suit_symbols.get(s, s)
+                                            color = suit_colors.get(s, Colors.WHITE)
+                                            # Add white background for both rank and suit for better visibility
+                                            return f"{Colors.BLACK}\033[47m{rank}{color}{symbol}{Colors.RESET}"
+                                        
+                                        cards_display = "  ".join(format_card_simple(card) for card in player_cards)
                                         session._stdout.write(f"{winner_mark} {Colors.BOLD}{pname}{Colors.RESET}: {Colors.CYAN}{Colors.BOLD}{rank_name}{Colors.RESET} - {cards_display} - {Colors.GREEN}{chip_count}{Colors.RESET}{player_status}\r\n")
                                     else:
                                         session._stdout.write(f"{winner_mark} {Colors.BOLD}{pname}{Colors.RESET}: {Colors.CYAN}{Colors.BOLD}{rank_name}{Colors.RESET} - {Colors.GREEN}{chip_count}{Colors.RESET}{player_status}\r\n")
