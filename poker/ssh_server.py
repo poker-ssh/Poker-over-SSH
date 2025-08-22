@@ -38,8 +38,12 @@ class RoomSession:
             self._stdout.write(f"{Colors.BOLD}{Colors.YELLOW}🎰 Welcome to Poker-over-SSH! 🎰{Colors.RESET}\r\n")
             if username:
                 self._stdout.write(f"🎭 Logged in as: {Colors.CYAN}{username}{Colors.RESET}\r\n")
-            self._stdout.write(f"🏠 Current room: {Colors.GREEN}Default Lobby{Colors.RESET}\r\n")
-            self._stdout.write(f"💡 Type '{Colors.GREEN}help{Colors.RESET}' for commands or '{Colors.GREEN}seat{Colors.RESET}' to join a game.\r\n")
+                self._stdout.write(f"🏠 Current room: {Colors.GREEN}Default Lobby{Colors.RESET}\r\n")
+                self._stdout.write(f"💡 Type '{Colors.GREEN}help{Colors.RESET}' for commands or '{Colors.GREEN}seat{Colors.RESET}' to join a game.\r\n")
+            else:
+                self._stdout.write(f"🏠 Current room: {Colors.GREEN}Default Lobby{Colors.RESET}\r\n")
+                self._stdout.write(f"⚠️  {Colors.YELLOW}No SSH username detected. To play, reconnect with: ssh <username>@<server>{Colors.RESET}\r\n")
+                self._stdout.write(f"💡 Type '{Colors.GREEN}help{Colors.RESET}' for commands.\r\n")
             self._stdout.write("❯ ")
         except Exception:
             pass
@@ -156,8 +160,17 @@ class RoomSession:
             await self._show_players()
             return
 
-        if cmd.lower().startswith("seat"):
+        if cmd.lower() == "seat":
             await self._handle_seat(cmd)
+            return
+
+        if cmd.lower().startswith("seat "):
+            # Reject seat commands with arguments
+            self._stdout.write(f"❌ {Colors.RED}The 'seat' command no longer accepts arguments.{Colors.RESET}\r\n")
+            self._stdout.write(f"💡 Just type '{Colors.GREEN}seat{Colors.RESET}' to use your SSH username ({self._username or 'not available'})\r\n\r\n❯ ")
+            self._stdout.write(f"💡 Just type '{Colors.GREEN}seat{Colors.RESET}' to use your SSH username ({self._username or 'not available'})\r\n\r\n")
+            self._stdout.write(f"💡 Or disconnect and connect with a different username: {Colors.GREEN}ssh <other_username>@<server>{Colors.RESET}\r\n\r\n")
+            await self._stdout.drain()
             return
 
         if cmd.lower() == "start":
@@ -209,7 +222,7 @@ class RoomSession:
             self._stdout.write("🎰 Poker-over-SSH Commands:\r\n")
             self._stdout.write("  help     Show this help\r\n")
             self._stdout.write("  whoami   Show connection info\r\n")
-            self._stdout.write("  seat     Claim a seat: 'seat <name>' (auto-uses SSH username)\r\n")
+            self._stdout.write("  seat     Claim a seat using your SSH username\r\n")
             self._stdout.write("  players  List all players in current room\r\n")
             self._stdout.write("  start    Start a poker round (requires 1+ human players)\r\n")
             self._stdout.write("  roomctl  Room management commands\r\n")
@@ -577,27 +590,38 @@ class RoomSession:
                 await self._stdout.drain()
                 return
             
-            parts = cmd.split()
-            if len(parts) >= 2:
-                # seat <name> - use provided name
-                name = parts[1]
-            elif len(parts) == 1 and self._username:
-                # seat (no args) - use SSH username
-                name = self._username
-            else:
-                # No name provided and no SSH username available
-                self._stdout.write(f"❌ {Colors.RED}Usage: seat [name]{Colors.RESET}\r\n")
-                self._stdout.write(f"💡 Or just type '{Colors.GREEN}seat{Colors.RESET}' to use your SSH username ({self._username or 'not available'})\r\n\r\n❯ ")
+            # Always use SSH username - no name arguments accepted
+            if not self._username:
+                self._stdout.write(f"❌ {Colors.RED}No SSH username available. Please connect with: ssh <username>@<server>{Colors.RESET}\r\n\r\n❯ ")
+                await self._stdout.drain()
+                return
+                
+            name = self._username
+            
+            # Debug: Show current session mappings
+            logging.info(f"Seat attempt by {name}. Current sessions in room: {[(s._username if hasattr(s, '_username') else 'no-username', p.name) for s, p in room.session_map.items()]}")
+            
+            # Check if THIS session is already seated
+            if self in room.session_map:
+                self._stdout.write(f"✅ {Colors.GREEN}You are already seated as {Colors.BOLD}{name}{Colors.RESET}{Colors.GREEN} in this room!{Colors.RESET}\r\n")
+                self._stdout.write(f"🎲 Type '{Colors.CYAN}start{Colors.RESET}' to begin a poker round.\r\n\r\n❯ ")
                 await self._stdout.drain()
                 return
             
-            # Check if name is already taken in this room
-            existing = next((p for p in room.pm.players if p.name == name), None)
-            if existing and any(session for session, player in room.session_map.items() if player == existing):
-                self._stdout.write(f"❌ {Colors.RED}Name '{name}' is already taken by an online player in this room.{Colors.RESET}\r\n")
-                self._stdout.write(f"💡 Try a different name: {Colors.GREEN}seat <other_name>{Colors.RESET}\r\n\r\n❯ ")
-                await self._stdout.drain()
-                return
+            # Check if username is already taken by a DIFFERENT active session
+            for session, player in room.session_map.items():
+                if player.name == name and session != self:
+                    # Double-check if the other session is still active
+                    if hasattr(session, '_running') and session._running and not session._should_exit:
+                        self._stdout.write(f"❌ {Colors.RED}Username '{name}' is already taken by another active player in this room.{Colors.RESET}\r\n")
+                        self._stdout.write(f"💡 Please disconnect and connect with a different username: {Colors.GREEN}ssh <other_username>@<server>{Colors.RESET}\r\n\r\n❯ ")
+                        await self._stdout.drain()
+                        return
+                    else:
+                        # Session is inactive, remove it
+                        logging.info(f"Removing inactive session for {name}")
+                        del room.session_map[session]
+                        break
             
             # Register player in the room
             player = await self._register_player_for_room(name, room)
