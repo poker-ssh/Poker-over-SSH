@@ -87,7 +87,7 @@ jobs:
           echo "No changes to commit"
         else
           git commit -m "chore: update version to ${{ steps.version_info.outputs.version }}"
-          git push
+          git push origin HEAD:main
         fi
         
     - name: Create version info summary
