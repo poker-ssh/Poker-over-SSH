@@ -150,6 +150,61 @@ def best_hand_from_seven(cards7: List[Card]) -> Tuple[int, List[int]]:
     return best
 
 
+def hand_description(hand_rank: int, tiebreakers: List[int]) -> str:
+    """Convert hand evaluation result to human-readable description."""
+    
+    def rank_name(r: int) -> str:
+        names = {11: 'Jack', 12: 'Queen', 13: 'King', 14: 'Ace'}
+        return names.get(r, str(r))
+    
+    def rank_name_plural(r: int) -> str:
+        names = {11: 'Jacks', 12: 'Queens', 13: 'Kings', 14: 'Aces'}
+        return names.get(r, f"{r}s")
+    
+    if hand_rank == HAND_RANKS['straight_flush']:
+        if tiebreakers[0] == 14:  # Ace high straight flush
+            return "Royal Flush"
+        else:
+            return f"Straight Flush, {rank_name(tiebreakers[0])} high"
+    
+    elif hand_rank == HAND_RANKS['quads']:
+        quad_rank = tiebreakers[0]
+        return f"Four of a Kind, {rank_name_plural(quad_rank)}"
+    
+    elif hand_rank == HAND_RANKS['fullhouse']:
+        trips_rank = tiebreakers[0]
+        pair_rank = tiebreakers[1]
+        return f"Full House, {rank_name_plural(trips_rank)} over {rank_name_plural(pair_rank)}"
+    
+    elif hand_rank == HAND_RANKS['flush']:
+        high_card = tiebreakers[0]
+        return f"Flush, {rank_name(high_card)} high"
+    
+    elif hand_rank == HAND_RANKS['straight']:
+        high_card = tiebreakers[0]
+        if high_card == 5:  # Wheel (A-2-3-4-5)
+            return "Straight, 5 high (Wheel)"
+        else:
+            return f"Straight, {rank_name(high_card)} high"
+    
+    elif hand_rank == HAND_RANKS['trips']:
+        trips_rank = tiebreakers[0]
+        return f"Three of a Kind, {rank_name_plural(trips_rank)}"
+    
+    elif hand_rank == HAND_RANKS['two_pair']:
+        high_pair = tiebreakers[0]
+        low_pair = tiebreakers[1]
+        return f"Two Pair, {rank_name_plural(high_pair)} and {rank_name_plural(low_pair)}"
+    
+    elif hand_rank == HAND_RANKS['pair']:
+        pair_rank = tiebreakers[0]
+        return f"Pair of {rank_name_plural(pair_rank)}"
+    
+    else:  # high card
+        high_card = tiebreakers[0]
+        return f"High Card, {rank_name(high_card)}"
+
+
 class Game:
     def __init__(self, players: List[Any]):
         self.players = players
@@ -403,8 +458,18 @@ class Game:
         """
         contenders = [p for p in self.players if p.state not in ['folded', 'eliminated']]
         results = {}
+        all_player_results = {}  # Evaluate ALL players for display
         best_val = None
         winners: List[str] = []
+        
+        # Evaluate all players' hands for display purposes
+        for p in self.players:
+            if len(p.hand) == 2 and len(self.community) >= 3:  # Only if we have enough cards
+                seven = p.hand + self.community
+                val = best_hand_from_seven(seven)
+                all_player_results[p.name] = val
+        
+        # Evaluate only contenders for winner determination
         for p in contenders:
             seven = p.hand + self.community
             val = best_hand_from_seven(seven)
@@ -430,7 +495,7 @@ class Game:
                     if i < remainder:
                         winner_player.chips += 1
 
-        return {'winners': winners, 'pot': self.pot, 'hands': results, 'all_hands': {p.name: p.hand for p in self.players}}
+        return {'winners': winners, 'pot': self.pot, 'hands': all_player_results, 'all_hands': {p.name: p.hand for p in self.players}}
 
     def _public_state(self, include_all_hands=False, current_player_name=None) -> Dict[str, Any]:
         state = {

@@ -924,7 +924,8 @@ class RoomSession:
                                 'pot': result.get('pot', 0),
                                 'players': [(p.name, p.chips, p.state) for p in players],
                                 'action_history': game.action_history,
-                                'all_hands': result.get('all_hands', {})
+                                'all_hands': result.get('all_hands', {}),
+                                'hands': result.get('hands', {})  # Include hand evaluations
                             }
                             
                             # Render final view with all hands shown
@@ -952,10 +953,18 @@ class RoomSession:
                             if hands:
                                 for pname, handval in hands.items():
                                     hand_rank, tiebreakers = handval
-                                    rank_names = {0: 'High Card', 1: 'Pair', 2: 'Two Pair', 3: 'Three of a Kind', 
-                                                 4: 'Straight', 5: 'Flush', 6: 'Full House', 7: 'Four of a Kind', 
-                                                 8: 'Straight Flush'}
-                                    rank_name = rank_names.get(hand_rank, f"Rank {hand_rank}")
+                                    
+                                    # Get descriptive hand name
+                                    try:
+                                        from poker.game import hand_description
+                                        hand_desc = hand_description(hand_rank, tiebreakers)
+                                    except Exception:
+                                        # Fallback to basic names
+                                        rank_names = {0: 'High Card', 1: 'Pair', 2: 'Two Pair', 3: 'Three of a Kind', 
+                                                     4: 'Straight', 5: 'Flush', 6: 'Full House', 7: 'Four of a Kind', 
+                                                     8: 'Straight Flush'}
+                                        hand_desc = rank_names.get(hand_rank, f"Rank {hand_rank}")
+                                    
                                     winner_mark = "👑" if pname in winners else "  "
                                     
                                     # Find player's current chip count
@@ -965,11 +974,11 @@ class RoomSession:
                                     # Show hand cards if available
                                     player_cards = all_hands.get(pname, [])
                                     if player_cards:
-                                        from poker.terminal_ui import card_str
+                                        from poker.game import card_str
                                         cards_display = "  ".join(card_str(card) for card in player_cards)
-                                        session._stdout.write(f"{winner_mark} {pname}: {Colors.CYAN}{rank_name}{Colors.RESET} - {cards_display} - {Colors.GREEN}{chip_count}{Colors.RESET}\r\n")
+                                        session._stdout.write(f"{winner_mark} {pname}: {Colors.CYAN}{hand_desc}{Colors.RESET} - {cards_display} - {Colors.GREEN}{chip_count}{Colors.RESET}\r\n")
                                     else:
-                                        session._stdout.write(f"{winner_mark} {pname}: {Colors.CYAN}{rank_name}{Colors.RESET} - {Colors.GREEN}{chip_count}{Colors.RESET}\r\n")
+                                        session._stdout.write(f"{winner_mark} {pname}: {Colors.CYAN}{hand_desc}{Colors.RESET} - {Colors.GREEN}{chip_count}{Colors.RESET}\r\n")
                             
                             session._stdout.write(f"{Colors.YELLOW}{'='*30}{Colors.RESET}\r\n\r\n❯ ")
                             await session._stdout.drain()
