@@ -67,9 +67,9 @@ class PlayerManager:
             try:
                 from poker.wallet import get_wallet_manager
                 wallet_manager = get_wallet_manager()
-                logging.debug(f"Getting chips for human player {name} from wallet")
-                chips = wallet_manager.get_player_chips_for_game(name, chips)
-                logging.debug(f"Player {name} has {chips} chips from wallet")
+                logging.debug(f"Getting all wallet funds for human player {name}")
+                chips = wallet_manager.get_player_chips_for_game(name)  # No buy_in parameter needed
+                logging.debug(f"Player {name} has {chips} chips from entire wallet")
             except ImportError:
                 # Fallback if wallet system not available
                 logging.debug("Wallet system not available, using default chips")

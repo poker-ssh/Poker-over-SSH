@@ -23,42 +23,39 @@ class WalletManager:
         return self.db.get_wallet(player_name)
     
     def get_player_chips_for_game(self, player_name: str, buy_in: int = 200) -> int:
-        """Get chips for a player to enter a game."""
-        logging.debug(f"WalletManager.get_player_chips_for_game: player={player_name}, buy_in={buy_in}")
+        """Get all chips from wallet for a player to enter a game."""
+        logging.debug(f"WalletManager.get_player_chips_for_game: player={player_name}, transferring all wallet funds")
         
         wallet = self.get_player_wallet(player_name)
         logging.debug(f"Player {player_name} wallet balance: ${wallet['balance']}")
         
-        if wallet['balance'] < buy_in:
-            # Not enough funds for full buy-in, use what they have
-            chips = wallet['balance']
-            if chips < 1:
-                # Add minimum funds if completely broke
-                logging.debug(f"Player {player_name} broke, adding minimum buy-in assistance")
-                self.add_funds(player_name, buy_in, "Minimum buy-in assistance")
-                chips = buy_in
-        else:
-            chips = buy_in
+        # Use entire wallet balance as chips
+        chips = wallet['balance']
         
-        logging.debug(f"Player {player_name} buying in for ${chips}")
+        if chips < 1:
+            # Add minimum funds if completely broke
+            logging.debug(f"Player {player_name} broke, adding minimum starting funds")
+            self.add_funds(player_name, 1000, "Starting funds for broke player")
+            chips = 1000
         
-        # Deduct buy-in from wallet
-        new_balance = wallet['balance'] - chips
+        logging.debug(f"Player {player_name} bringing all ${chips} into game")
+        
+        # Transfer entire wallet to game chips (set wallet to 0)
         try:
             self.db.update_wallet_balance(
-                player_name, new_balance, 'GAME_BUY_IN',
-                f"Bought into game for ${chips}"
+                player_name, 0, 'GAME_ALL_IN',
+                f"Transferred entire wallet (${chips}) to game"
             )
-            logging.debug(f"Updated wallet balance for {player_name}: ${new_balance}")
+            logging.debug(f"Wallet emptied for {player_name}, all ${chips} now in game")
             
             # Log the action
             self.db.log_action(
-                player_name, "game", "BUY_IN", chips,
-                details=f"Bought into game for ${chips}"
+                player_name, "game", "ALL_IN_BUY_IN", chips,
+                details=f"Transferred entire wallet (${chips}) to game"
             )
-            logging.debug(f"Logged buy-in action for {player_name}")
+            logging.debug(f"Logged all-in buy-in action for {player_name}")
         except Exception as e:
-            logging.error(f"Database error during buy-in for {player_name}: {e}")
+            logging.error(f"Database error during all-in buy-in for {player_name}: {e}")
             raise
         
         return chips

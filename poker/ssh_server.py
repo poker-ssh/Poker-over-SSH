@@ -1149,6 +1149,10 @@ class RoomSession:
                     logging.debug("Starting game round")
                     result = await game.start_round()
                     logging.debug(f"Game round completed: {result}")
+                    
+                    # Return chips to wallets and update stats
+                    logging.debug("Returning chips to wallets and updating stats")
+                    room.pm.finish_round()
 
                     # broadcast results to sessions in this room
                     for session, player in list(room.session_map.items()):

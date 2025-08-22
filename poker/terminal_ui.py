@@ -216,14 +216,8 @@ class TerminalUI:
             # Different icons for different player types
             if n == self.player_name:
                 player_indicator = "👤"  # Current human player
-                # Show wallet balance for current player
-                try:
-                    from poker.wallet import get_wallet_manager
-                    wallet_manager = get_wallet_manager()
-                    wallet = wallet_manager.get_player_wallet(n)
-                    wallet_info = f" [Wallet: ${wallet['balance']}]"
-                except Exception:
-                    wallet_info = ""
+                # No need to show wallet during game since all funds are now chips
+                wallet_info = ""
             elif is_ai:
                 player_indicator = "🤖"  # AI player
                 wallet_info = ""
