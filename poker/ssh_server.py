@@ -87,6 +87,16 @@ class RoomSession:
 
     async def _stop(self):
         """Stop the session."""
+        # Auto-save wallet before stopping
+        if hasattr(self, '_username') and self._username:
+            try:
+                from poker.wallet import get_wallet_manager
+                wallet_manager = get_wallet_manager()
+                wallet_manager.on_player_disconnect(self._username)
+                logging.info(f"Auto-saved wallet for {self._username} during stop")
+            except Exception as e:
+                logging.warning(f"Error auto-saving wallet for {self._username} during stop: {e}")
+        
         self._should_exit = True
         self._running = False
 
@@ -125,6 +135,17 @@ class RoomSession:
             logging.exception(f"Input reader error: {e}")
         finally:
             logging.info("RoomSession: input reader ending")
+            
+            # Auto-save wallet when input reader ends (disconnection)
+            if hasattr(self, '_username') and self._username:
+                try:
+                    from poker.wallet import get_wallet_manager
+                    wallet_manager = get_wallet_manager()
+                    wallet_manager.on_player_disconnect(self._username)
+                    logging.info(f"Auto-saved wallet for {self._username} during input reader end")
+                except Exception as e:
+                    logging.warning(f"Error auto-saving wallet for {self._username} during input reader end: {e}")
+            
             try:
                 if hasattr(self._stdout, 'close'):
                     self._stdout.close()
@@ -1365,8 +1386,11 @@ class RoomSession:
                 from poker.wallet import get_wallet_manager
                 wallet_manager = get_wallet_manager()
                 wallet_manager.on_player_disconnect(self._username)
+                logging.info(f"Auto-saved wallet for {self._username} during connection_lost")
             except Exception as e:
-                logging.warning(f"Error auto-saving wallet for {self._username}: {e}")
+                logging.warning(f"Error auto-saving wallet for {self._username} during connection_lost: {e}")
+        else:
+            logging.debug("No username available during connection_lost, skipping wallet save")
         
         # Mark session for cleanup
         self._should_exit = True

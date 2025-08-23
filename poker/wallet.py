@@ -60,6 +60,8 @@ class WalletManager:
             # Only save if there are changes
             if old_balance == new_balance:
                 logging.debug(f"No balance changes for {player_name}, skipping save")
+                # Still update cache to mark as "saved" by removing unsaved indicator
+                self._wallet_cache[player_name] = db_wallet.copy()
                 return True
             
             # Update database with cached values
@@ -73,7 +75,14 @@ class WalletManager:
             if winnings_change != 0:
                 self.db.update_game_stats(player_name, winnings_change)
                 # Reset session winnings after save
-                self._wallet_cache[player_name]['session_winnings'] = 0
+                wallet['session_winnings'] = 0
+            
+            # Update cache with fresh database state to clear "unsaved" status
+            updated_wallet = self.db.get_wallet(player_name)
+            # Preserve session winnings if we didn't save them
+            if 'session_winnings' in wallet and winnings_change == 0:
+                updated_wallet['session_winnings'] = wallet['session_winnings']
+            self._wallet_cache[player_name] = updated_wallet
             
             logging.info(f"Wallet saved for {player_name}: ${new_balance}")
             return True
@@ -189,13 +198,36 @@ class WalletManager:
         """Get action history for a player."""
         return self.db.get_player_actions(player_name, limit)
     
+    def _has_unsaved_changes(self, player_name: str) -> bool:
+        """Check if a player has unsaved changes in their wallet cache."""
+        if player_name not in self._wallet_cache:
+            return False
+        
+        try:
+            # Compare cached wallet with database
+            cached_wallet = self._wallet_cache[player_name]
+            db_wallet = self.db.get_wallet(player_name)
+            
+            # Check if balance differs
+            if cached_wallet['balance'] != db_wallet['balance']:
+                return True
+            
+            # Check if there are session winnings
+            if cached_wallet.get('session_winnings', 0) != 0:
+                return True
+            
+            return False
+        except Exception:
+            # If we can't compare, assume there are changes to be safe
+            return True
+    
     def format_wallet_info(self, player_name: str) -> str:
         """Format wallet information for display."""
         wallet = self.get_player_wallet(player_name)
         
-        # Check if there are unsaved changes
-        is_cached = player_name in self._wallet_cache
-        unsaved_indicator = f" {Colors.YELLOW}(UNSAVED){Colors.RESET}" if is_cached else ""
+        # Check if there are actual unsaved changes
+        has_unsaved = self._has_unsaved_changes(player_name)
+        unsaved_indicator = f" {Colors.YELLOW}(UNSAVED){Colors.RESET}" if has_unsaved else ""
         
         output = []
         output.append(f"{Colors.BOLD}{Colors.GREEN}💰 Wallet for {player_name}{unsaved_indicator}{Colors.RESET}")
@@ -222,7 +254,7 @@ class WalletManager:
             )
             output.append(f"🕒 Last Activity: {last_activity}")
         
-        if is_cached:
+        if has_unsaved:
             output.append("")
             output.append(f"{Colors.YELLOW}💡 Use 'wallet save' to persist changes to database{Colors.RESET}")
         
@@ -230,10 +262,17 @@ class WalletManager:
     
     def on_player_disconnect(self, player_name: str) -> None:
         """Handle player disconnection - auto-save their wallet."""
+        logging.info(f"on_player_disconnect called for {player_name}")
         if player_name in self._wallet_cache:
             logging.info(f"Player {player_name} disconnected, auto-saving wallet")
-            self.save_wallet_to_database(player_name)
+            success = self.save_wallet_to_database(player_name)
+            if success:
+                logging.info(f"Successfully auto-saved wallet for {player_name}")
+            else:
+                logging.error(f"Failed to auto-save wallet for {player_name}")
             # Keep in cache for potential reconnection
+        else:
+            logging.debug(f"No cached wallet found for {player_name}, nothing to auto-save")
     
     def format_transaction_history(self, player_name: str, limit: int = 10) -> str:
         """Format transaction history for display."""
