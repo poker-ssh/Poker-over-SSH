@@ -1038,6 +1038,30 @@ class RoomSession:
         player.actor = actor
         return player
 
+    async def _broadcast_ai_thinking_status(self, ai_name: str, is_thinking: bool, room):
+        """Broadcast AI thinking status to all players in the room."""
+        if not hasattr(room, 'ai_thinking_status'):
+            room.ai_thinking_status = {}
+        
+        room.ai_thinking_status[ai_name] = is_thinking
+        
+        # Simple status update - no animations, just like human players
+        for session, session_player in list(room.session_map.items()):
+            try:
+                if session._stdout.is_closing():
+                    continue
+                
+                if is_thinking:
+                    # Simple thinking message, similar to human players
+                    session._stdout.write(f"⏳ Waiting for 🤖 {Colors.CYAN}{ai_name}{Colors.RESET} to make their move...\r\n")
+                else:
+                    # Clear the line when done
+                    session._stdout.write(f"\r\033[K")
+                
+                await session._stdout.drain()
+            except Exception as e:
+                logging.error(f"Error broadcasting AI thinking status to {session_player.name}: {e}")
+
     async def _broadcast_waiting_status(self, current_player_name: str, game_state: Dict[str, Any], room):
         """Broadcast the current game state to all players in the room showing who they're waiting for."""
         for session, session_player in list(room.session_map.items()):
@@ -1058,9 +1082,9 @@ class RoomSession:
                     if current_player_name:
                         current_player_obj = next((p for p in room.pm.players if p.name == current_player_name), None)
                         if current_player_obj and current_player_obj.is_ai:
-                            session._stdout.write(f"⏳ Waiting for {Colors.CYAN}🤖 {current_player_name}{Colors.RESET} (AI is thinking...)\r\n")
+                            session._stdout.write(f"⏳ Waiting for 🤖 {Colors.CYAN}{current_player_name}{Colors.RESET} to make their move...\r\n")
                         else:
-                            session._stdout.write(f"⏳ Waiting for {Colors.CYAN}👤 {current_player_name}{Colors.RESET} to make their move...\r\n")
+                            session._stdout.write(f"⏳ Waiting for 👤 {Colors.CYAN}{current_player_name}{Colors.RESET} to make their move...\r\n")
                     else:
                         session._stdout.write(f"⏳ Waiting for game to continue...\r\n")
                 else:
@@ -1152,6 +1176,12 @@ class RoomSession:
                         # Set up AI actor
                         from poker.ai import PokerAI
                         ai = PokerAI(ai_player)
+                        
+                        # Set up thinking callback to notify all players
+                        async def thinking_callback(ai_name: str, is_thinking: bool):
+                            await self._broadcast_ai_thinking_status(ai_name, is_thinking, room)
+                        
+                        ai.thinking_callback = thinking_callback
                         ai_player.actor = ai.decide_action
                         
                         added_ais += 1
