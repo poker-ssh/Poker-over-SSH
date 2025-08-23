@@ -13,18 +13,86 @@ from poker.terminal_ui import Colors
 
 
 class WalletManager:
-    """Manages player wallets with database persistence."""
+    """Manages player wallets with on-demand database persistence."""
     
     def __init__(self):
         self.db = get_database()
+        # In-memory wallet cache for active sessions
+        self._wallet_cache: Dict[str, Dict[str, Any]] = {}
     
     def get_player_wallet(self, player_name: str) -> Dict[str, Any]:
-        """Get wallet information for a player."""
-        return self.db.get_wallet(player_name)
+        """Get wallet information for a player (from cache or database)."""
+        # Check cache first
+        if player_name in self._wallet_cache:
+            return self._wallet_cache[player_name].copy()
+        
+        # Load from database and cache it
+        wallet = self.db.get_wallet(player_name)
+        self._wallet_cache[player_name] = wallet.copy()
+        return wallet
+    
+    def _update_cache(self, player_name: str, **updates) -> None:
+        """Update wallet cache with new values."""
+        if player_name not in self._wallet_cache:
+            self._wallet_cache[player_name] = self.db.get_wallet(player_name)
+        
+        # Update the cached values
+        for key, value in updates.items():
+            self._wallet_cache[player_name][key] = value
+        
+        # Update last activity
+        self._wallet_cache[player_name]['last_activity'] = time.time()
+    
+    def save_wallet_to_database(self, player_name: str) -> bool:
+        """Manually save a wallet from cache to database."""
+        if player_name not in self._wallet_cache:
+            logging.debug(f"No cached wallet found for {player_name}, nothing to save")
+            return False
+        
+        wallet = self._wallet_cache[player_name]
+        
+        try:
+            # Get current database state
+            db_wallet = self.db.get_wallet(player_name)
+            old_balance = db_wallet['balance']
+            new_balance = wallet['balance']
+            
+            # Only save if there are changes
+            if old_balance == new_balance:
+                logging.debug(f"No balance changes for {player_name}, skipping save")
+                return True
+            
+            # Update database with cached values
+            self.db.update_wallet_balance(
+                player_name, new_balance, 'MANUAL_SAVE',
+                f"Manual save: ${old_balance} -> ${new_balance}"
+            )
+            
+            # Update game stats if needed
+            winnings_change = wallet.get('session_winnings', 0)
+            if winnings_change != 0:
+                self.db.update_game_stats(player_name, winnings_change)
+                # Reset session winnings after save
+                self._wallet_cache[player_name]['session_winnings'] = 0
+            
+            logging.info(f"Wallet saved for {player_name}: ${new_balance}")
+            return True
+            
+        except Exception as e:
+            logging.error(f"Failed to save wallet for {player_name}: {e}")
+            return False
+    
+    def save_all_wallets(self) -> int:
+        """Save all cached wallets to database. Returns number of wallets saved."""
+        saved_count = 0
+        for player_name in list(self._wallet_cache.keys()):
+            if self.save_wallet_to_database(player_name):
+                saved_count += 1
+        return saved_count
     
     def get_player_chips_for_game(self, player_name: str, buy_in: int = 200) -> int:
-        """Get all chips from wallet for a player to enter a game."""
-        logging.debug(f"WalletManager.get_player_chips_for_game: player={player_name}, transferring all wallet funds")
+        """Get all chips from wallet for a player to enter a game (in-memory only)."""
+        logging.debug(f"WalletManager.get_player_chips_for_game: player={player_name}")
         
         wallet = self.get_player_wallet(player_name)
         logging.debug(f"Player {player_name} wallet balance: ${wallet['balance']}")
@@ -33,68 +101,49 @@ class WalletManager:
         chips = wallet['balance']
         
         if chips < 1:
-            # Add minimum funds if completely broke
+            # Add minimum funds if completely broke (in memory)
             logging.debug(f"Player {player_name} broke, adding minimum starting funds")
-            self.add_funds(player_name, 500, "Starting funds for broke player")
+            self._update_cache(player_name, balance=500)
             chips = 500
         
         logging.debug(f"Player {player_name} bringing all ${chips} into game")
         
-        # Transfer entire wallet to game chips (set wallet to 0)
-        try:
-            self.db.update_wallet_balance(
-                player_name, 0, 'GAME_ALL_IN',
-                f"Transferred entire wallet (${chips}) to game"
-            )
-            logging.debug(f"Wallet emptied for {player_name}, all ${chips} now in game")
-            
-            # Log the action
-            self.db.log_action(
-                player_name, "game", "ALL_IN_BUY_IN", chips,
-                details=f"Transferred entire wallet (${chips}) to game"
-            )
-            logging.debug(f"Logged all-in buy-in action for {player_name}")
-        except Exception as e:
-            logging.error(f"Database error during all-in buy-in for {player_name}: {e}")
-            raise
+        # Transfer entire wallet to game chips (set wallet to 0 in memory)
+        self._update_cache(player_name, balance=0)
+        logging.debug(f"Wallet emptied for {player_name}, all ${chips} now in game (in memory)")
         
         return chips
     
     def return_chips_to_wallet(self, player_name: str, chips: int, 
                               round_id: Optional[str] = None, winnings: int = 0) -> None:
-        """Return chips to player's wallet after a game."""
+        """Return chips to player's wallet after a game (in-memory only)."""
         wallet = self.get_player_wallet(player_name)
         new_balance = wallet['balance'] + chips
         
-        description = f"Game ended with ${chips} chips"
-        if winnings > 0:
-            description += f" (won ${winnings})"
-        elif winnings < 0:
-            description += f" (lost ${abs(winnings)})"
+        # Track session winnings for later database save
+        session_winnings = wallet.get('session_winnings', 0) + winnings
         
-        self.db.update_wallet_balance(
-            player_name, new_balance, 'GAME_CASHOUT',
-            description, round_id
+        # Update in-memory cache
+        self._update_cache(
+            player_name, 
+            balance=new_balance,
+            session_winnings=session_winnings
         )
         
-        # Update game statistics
-        self.db.update_game_stats(player_name, winnings)
-        
-        # Log the action
-        self.db.log_action(
-            player_name, "game", "CASH_OUT", chips,
-            round_id=round_id, details=description
-        )
+        logging.debug(f"Returned ${chips} to {player_name}'s wallet (winnings: ${winnings})")
+        logging.debug(f"New balance: ${new_balance} (in memory)")
     
     def add_funds(self, player_name: str, amount: int, 
                  reason: str = "Manual add") -> Dict[str, Any]:
-        """Add funds to a player's wallet."""
-        self.db.log_action(
-            player_name, "wallet", "ADD_FUNDS", amount,
-            details=f"Added ${amount}: {reason}"
-        )
+        """Add funds to a player's wallet (in-memory only)."""
+        wallet = self.get_player_wallet(player_name)
+        new_balance = wallet['balance'] + amount
         
-        return self.db.add_wallet_funds(player_name, amount, reason)
+        # Update in-memory cache
+        self._update_cache(player_name, balance=new_balance)
+        
+        logging.debug(f"Added ${amount} to {player_name}'s wallet: {reason}")
+        return self.get_player_wallet(player_name)
     
     def claim_hourly_bonus(self, player_name: str) -> Tuple[bool, str]:
         """Claim hourly bonus for a player."""
@@ -102,48 +151,34 @@ class WalletManager:
         if not can_claim:
             return False, message
         
+        # Mark bonus as claimed in database (this needs immediate save to prevent double-claims)
         success = self.db.claim_bonus(player_name, 150)
         if success:
-            self.db.log_action(
-                player_name, "wallet", "HOURLY_BONUS", 150,
-                details="Claimed hourly bonus of $150"
-            )
+            # The database already updated the wallet balance, so sync our cache
+            updated_wallet = self.db.get_wallet(player_name)
+            self._wallet_cache[player_name] = updated_wallet.copy()
+            
             return True, "✅ Claimed $150 hourly bonus!"
         else:
             return False, "❌ Failed to claim bonus"
     
     def transfer_funds(self, from_player: str, to_player: str, amount: int) -> bool:
-        """Transfer funds between players."""
+        """Transfer funds between players (in-memory only)."""
         from_wallet = self.get_player_wallet(from_player)
         
         if from_wallet['balance'] < amount:
             return False
         
-        # Deduct from sender
-        new_from_balance = from_wallet['balance'] - amount
-        self.db.update_wallet_balance(
-            from_player, new_from_balance, 'TRANSFER_OUT',
-            f"Transferred ${amount} to {to_player}"
-        )
-        
-        # Add to recipient
+        # Update both wallets in cache
         to_wallet = self.get_player_wallet(to_player)
+        
+        new_from_balance = from_wallet['balance'] - amount
         new_to_balance = to_wallet['balance'] + amount
-        self.db.update_wallet_balance(
-            to_player, new_to_balance, 'TRANSFER_IN',
-            f"Received ${amount} from {from_player}"
-        )
         
-        # Log actions
-        self.db.log_action(
-            from_player, "wallet", "TRANSFER_OUT", amount,
-            details=f"Transferred ${amount} to {to_player}"
-        )
-        self.db.log_action(
-            to_player, "wallet", "TRANSFER_IN", amount,
-            details=f"Received ${amount} from {from_player}"
-        )
+        self._update_cache(from_player, balance=new_from_balance)
+        self._update_cache(to_player, balance=new_to_balance)
         
+        logging.debug(f"Transferred ${amount} from {from_player} to {to_player} (in memory)")
         return True
     
     def get_transaction_history(self, player_name: str, limit: int = 20) -> List[Dict[str, Any]]:
@@ -158,8 +193,12 @@ class WalletManager:
         """Format wallet information for display."""
         wallet = self.get_player_wallet(player_name)
         
+        # Check if there are unsaved changes
+        is_cached = player_name in self._wallet_cache
+        unsaved_indicator = f" {Colors.YELLOW}(UNSAVED){Colors.RESET}" if is_cached else ""
+        
         output = []
-        output.append(f"{Colors.BOLD}{Colors.GREEN}💰 Wallet for {player_name}{Colors.RESET}")
+        output.append(f"{Colors.BOLD}{Colors.GREEN}💰 Wallet for {player_name}{unsaved_indicator}{Colors.RESET}")
         output.append("=" * 40)
         output.append(f"💵 Balance: {Colors.BOLD}{Colors.CYAN}${wallet['balance']}{Colors.RESET}")
         output.append(f"🎮 Games Played: {wallet['games_played']}")
@@ -170,6 +209,12 @@ class WalletManager:
         net_color = Colors.GREEN if net >= 0 else Colors.RED
         output.append(f"📊 Net: {net_color}${net:+}{Colors.RESET}")
         
+        # Show session winnings if any
+        session_winnings = wallet.get('session_winnings', 0)
+        if session_winnings != 0:
+            session_color = Colors.GREEN if session_winnings > 0 else Colors.RED
+            output.append(f"🎯 Session: {session_color}${session_winnings:+}{Colors.RESET}")
+        
         if wallet['last_activity'] > 0:
             last_activity = time.strftime(
                 "%Y-%m-%d %H:%M", 
@@ -177,7 +222,18 @@ class WalletManager:
             )
             output.append(f"🕒 Last Activity: {last_activity}")
         
+        if is_cached:
+            output.append("")
+            output.append(f"{Colors.YELLOW}💡 Use 'wallet save' to persist changes to database{Colors.RESET}")
+        
         return "\r\n".join(output)
+    
+    def on_player_disconnect(self, player_name: str) -> None:
+        """Handle player disconnection - auto-save their wallet."""
+        if player_name in self._wallet_cache:
+            logging.info(f"Player {player_name} disconnected, auto-saving wallet")
+            self.save_wallet_to_database(player_name)
+            # Keep in cache for potential reconnection
     
     def format_transaction_history(self, player_name: str, limit: int = 10) -> str:
         """Format transaction history for display."""

@@ -295,6 +295,8 @@ class RoomSession:
             self._stdout.write("  wallet actions       - Show recent game actions\r\n")
             self._stdout.write("  wallet leaderboard   - Show top players\r\n")
             self._stdout.write("  wallet add           - Claim hourly bonus ($150, once per hour)\r\n")
+            self._stdout.write("  wallet save          - Save wallet changes to database\r\n")
+            self._stdout.write("  wallet saveall       - Save all wallets (admin only)\r\n")
             self._stdout.write("\r\n🏠 Room Commands:\r\n")
             self._stdout.write("  roomctl list           - List all rooms\r\n")
             self._stdout.write("  roomctl create [name]  - Create a new room\r\n")
@@ -662,10 +664,26 @@ class RoomSession:
                 # Claim hourly bonus
                 success, message = wallet_manager.claim_hourly_bonus(self._username)
                 self._stdout.write(f"{message}\r\n\r\n❯ ")
+                
+            elif subcmd == "save":
+                # Manual save to database
+                success = wallet_manager.save_wallet_to_database(self._username)
+                if success:
+                    self._stdout.write(f"✅ Wallet saved to database successfully!\r\n\r\n❯ ")
+                else:
+                    self._stdout.write(f"❌ Failed to save wallet to database\r\n\r\n❯ ")
+                    
+            elif subcmd == "saveall":
+                # Admin command to save all cached wallets
+                if self._username in ['admin', 'root']:  # Basic admin check
+                    saved_count = wallet_manager.save_all_wallets()
+                    self._stdout.write(f"✅ Saved {saved_count} wallets to database\r\n\r\n❯ ")
+                else:
+                    self._stdout.write(f"❌ Admin privileges required for saveall command\r\n\r\n❯ ")
                         
             else:
                 self._stdout.write(f"❌ Unknown wallet command: {subcmd}\r\n")
-                self._stdout.write("💡 Available: history, actions, leaderboard, add\r\n\r\n❯ ")
+                self._stdout.write("💡 Available: history, actions, leaderboard, add, save, saveall\r\n\r\n❯ ")
             
             await self._stdout.drain()
             
@@ -1340,6 +1358,15 @@ class RoomSession:
             logging.info(f"RoomSession.connection_lost: {exc}")
         else:
             logging.debug("RoomSession.connection_lost: Clean disconnection")
+        
+        # Auto-save wallet on disconnect
+        if hasattr(self, '_username') and self._username:
+            try:
+                from poker.wallet import get_wallet_manager
+                wallet_manager = get_wallet_manager()
+                wallet_manager.on_player_disconnect(self._username)
+            except Exception as e:
+                logging.warning(f"Error auto-saving wallet for {self._username}: {e}")
         
         # Mark session for cleanup
         self._should_exit = True
