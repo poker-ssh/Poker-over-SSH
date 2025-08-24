@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import random
 import itertools
+import logging
 from typing import List, Tuple, Dict, Any
 
 
@@ -206,9 +207,8 @@ def hand_description(hand_rank: int, tiebreakers: List[int]) -> str:
 
 
 class Game:
-    def __init__(self, players: List[Any], player_manager=None):
+    def __init__(self, players: List[Any]):
         self.players = players
-        self.player_manager = player_manager
         self.deck: List[Card] = []
         self.pot = 0
         self.community: List[Card] = []
@@ -312,6 +312,8 @@ class Game:
 
                 a = act.get('action')
                 amt = int(act.get('amount', 0))
+                
+                logging.debug(f"Player {p.name} action: {a}, amount: {amt}")
                 
                 # Remove player from players_to_act - they've now acted
                 players_to_act.discard(p.name)
