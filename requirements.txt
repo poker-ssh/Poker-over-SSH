@@ -1,3 +1,5 @@
 asyncssh
 rich
 asyncio
+openai
+python-dotenv

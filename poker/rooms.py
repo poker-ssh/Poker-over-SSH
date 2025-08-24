@@ -91,7 +91,7 @@ class RoomManager:
             created_at=time.time(),
             expires_at=float('inf'),  # Never expires
             creator="system",
-            pm=PlayerManager(),
+            pm=PlayerManager("default"),  # Pass room code to PlayerManager
             session_map={},
             game_in_progress=False,
             is_private=False  # Default room is public
@@ -121,7 +121,7 @@ class RoomManager:
             created_at=time.time(),
             expires_at=time.time() + (30 * 60),  # 30 minutes
             creator=creator,
-            pm=PlayerManager(),
+            pm=PlayerManager(code),  # Pass room code to PlayerManager
             session_map={},
             game_in_progress=False,
             is_private=is_private
@@ -213,7 +213,12 @@ class RoomManager:
             try:
                 session._stdout.write(f"\r\n🏠 Room '{room.name}' has been deleted by {room.creator}.\r\n")
                 session._stdout.write(f"🔄 You've been moved to the default room.\r\n❯ ")
-                _schedule_drain(session._stdout)
+                # Try to drain, but don't fail if we can't
+                try:
+                    import asyncio
+                    asyncio.create_task(session._stdout.drain())
+                except Exception:
+                    pass
             except Exception:
                 pass
         

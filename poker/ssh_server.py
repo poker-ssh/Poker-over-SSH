@@ -87,6 +87,16 @@ class RoomSession:
 
     async def _stop(self):
         """Stop the session."""
+        # Auto-save wallet before stopping
+        if hasattr(self, '_username') and self._username:
+            try:
+                from poker.wallet import get_wallet_manager
+                wallet_manager = get_wallet_manager()
+                wallet_manager.on_player_disconnect(self._username)
+                logging.info(f"Auto-saved wallet for {self._username} during stop")
+            except Exception as e:
+                logging.warning(f"Error auto-saving wallet for {self._username} during stop: {e}")
+        
         self._should_exit = True
         self._running = False
 
@@ -125,6 +135,17 @@ class RoomSession:
             logging.exception(f"Input reader error: {e}")
         finally:
             logging.info("RoomSession: input reader ending")
+            
+            # Auto-save wallet when input reader ends (disconnection)
+            if hasattr(self, '_username') and self._username:
+                try:
+                    from poker.wallet import get_wallet_manager
+                    wallet_manager = get_wallet_manager()
+                    wallet_manager.on_player_disconnect(self._username)
+                    logging.info(f"Auto-saved wallet for {self._username} during input reader end")
+                except Exception as e:
+                    logging.warning(f"Error auto-saving wallet for {self._username} during input reader end: {e}")
+            
             try:
                 if hasattr(self._stdout, 'close'):
                     self._stdout.close()
@@ -160,6 +181,9 @@ class RoomSession:
 
     async def _process_command(self, cmd: str):
         """Process user commands."""
+        # Log all user commands for debugging
+        logging.debug(f"User {self._username} in room {self._current_room} executed command: '{cmd}'")
+        
         if not cmd:
             try:
                 self._stdout.write("❯ ")
@@ -169,6 +193,7 @@ class RoomSession:
             return
 
         if cmd.lower() in ("quit", "exit"):
+            logging.debug(f"User {self._username} disconnecting")
             try:
                 self._stdout.write("Goodbye!\r\n")
                 await self._stdout.drain()
@@ -179,31 +204,38 @@ class RoomSession:
 
         # Handle roomctl commands
         if cmd.lower().startswith("roomctl"):
+            logging.debug(f"User {self._username} executing roomctl command: {cmd}")
             await self._handle_roomctl(cmd)
             return
 
         if cmd.lower() == "help":
+            logging.debug(f"User {self._username} requested help")
             await self._show_help()
             return
 
         if cmd.lower() == "whoami":
+            logging.debug(f"User {self._username} requested whoami")
             await self._show_whoami()
             return
 
         if cmd.lower() == "server":
+            logging.debug(f"User {self._username} requested server info")
             await self._show_server_info()
             return
 
         if cmd.lower() == "players":
+            logging.debug(f"User {self._username} requested players list")
             await self._show_players()
             return
 
         if cmd.lower() == "seat":
+            logging.debug(f"User {self._username} attempting to seat")
             await self._handle_seat(cmd)
             return
 
         if cmd.lower().startswith("seat "):
             # Reject seat commands with arguments
+            logging.debug(f"User {self._username} tried seat with arguments: {cmd}")
             self._stdout.write(f"❌ {Colors.RED}The 'seat' command no longer accepts arguments.{Colors.RESET}\r\n")
             self._stdout.write(f"💡 Just type '{Colors.GREEN}seat{Colors.RESET}' to use your SSH username ({self._username or 'not available'})\r\n\r\n")
             self._stdout.write(f"💡 Or disconnect and connect with a different username: {Colors.GREEN}ssh <other_username>@{get_ssh_connection_string()}{Colors.RESET}\r\n\r\n❯ ")
@@ -211,10 +243,22 @@ class RoomSession:
             return
 
         if cmd.lower() == "start":
+            logging.debug(f"User {self._username} attempting to start game")
             await self._handle_start()
             return
 
+        if cmd.lower() == "wallet":
+            logging.debug(f"User {self._username} requesting wallet info")
+            await self._handle_wallet()
+            return
+
+        if cmd.lower().startswith("wallet "):
+            logging.debug(f"User {self._username} executing wallet command: {cmd}")
+            await self._handle_wallet_command(cmd)
+            return
+
         # Unknown command
+        logging.debug(f"User {self._username} used unknown command: {cmd}")
         try:
             self._stdout.write(f"❓ Unknown command: {cmd}\r\n")
             self._stdout.write(f"💡 Type '{Colors.GREEN}help{Colors.RESET}' for available commands.\r\n\r\n❯ ")
@@ -263,8 +307,17 @@ class RoomSession:
             self._stdout.write("  seat     Claim a seat using your SSH username\r\n")
             self._stdout.write("  players  List all players in current room\r\n")
             self._stdout.write("  start    Start a poker round (requires 1+ human players)\r\n")
+            self._stdout.write("  wallet   Show your wallet balance and stats\r\n")
             self._stdout.write("  roomctl  Room management commands\r\n")
             self._stdout.write("  quit     Disconnect\r\n")
+            self._stdout.write("\r\n💰 Wallet Commands:\r\n")
+            self._stdout.write("  wallet               - Show wallet balance and stats\r\n")
+            self._stdout.write("  wallet history       - Show transaction history\r\n")
+            self._stdout.write("  wallet actions       - Show recent game actions\r\n")
+            self._stdout.write("  wallet leaderboard   - Show top players\r\n")
+            self._stdout.write("  wallet add           - Claim hourly bonus ($150, once per hour)\r\n")
+            self._stdout.write("  wallet save          - Save wallet changes to database\r\n")
+            self._stdout.write("  wallet saveall       - Save all wallets (admin only)\r\n")
             self._stdout.write("\r\n🏠 Room Commands:\r\n")
             self._stdout.write("  roomctl list           - List all rooms\r\n")
             self._stdout.write("  roomctl create [name]  - Create a new room\r\n")
@@ -274,6 +327,8 @@ class RoomSession:
             self._stdout.write("  roomctl extend         - Extend current room by 30 minutes\r\n")
             self._stdout.write("  roomctl delete         - Delete current room (creator only)\r\n")
             self._stdout.write("\r\n💡 Tips:\r\n")
+            self._stdout.write("  - Your wallet persists across server restarts\r\n")
+            self._stdout.write("  - All actions are logged to the database\r\n")
             self._stdout.write("  - Rooms expire after 30 minutes unless extended\r\n")
             self._stdout.write("  - The default room never expires\r\n")
             self._stdout.write("  - Room codes are private and only visible to creators and members\r\n")
@@ -559,6 +614,104 @@ class RoomSession:
             self._stdout.write(f"❌ Error deleting room: {e}\r\n\r\n❯ ")
             await self._stdout.drain()
 
+    async def _handle_wallet(self):
+        """Handle wallet command - show wallet info."""
+        try:
+            if not self._username:
+                self._stdout.write("❌ Username required for wallet operations\r\n\r\n❯ ")
+                await self._stdout.drain()
+                return
+            
+            from poker.wallet import get_wallet_manager
+            wallet_manager = get_wallet_manager()
+            
+            wallet_info = wallet_manager.format_wallet_info(self._username)
+            self._stdout.write(f"{wallet_info}\r\n\r\n❯ ")
+            await self._stdout.drain()
+        except Exception as e:
+            self._stdout.write(f"❌ Error showing wallet: {e}\r\n\r\n❯ ")
+            await self._stdout.drain()
+
+    async def _handle_wallet_command(self, cmd: str):
+        """Handle wallet subcommands."""
+        try:
+            if not self._username:
+                self._stdout.write("❌ Username required for wallet operations\r\n\r\n❯ ")
+                await self._stdout.drain()
+                return
+            
+            parts = cmd.split()
+            if len(parts) < 2:
+                await self._handle_wallet()
+                return
+            
+            subcmd = parts[1].lower()
+            
+            from poker.wallet import get_wallet_manager
+            wallet_manager = get_wallet_manager()
+            
+            if subcmd == "history":
+                history = wallet_manager.format_transaction_history(self._username, 15)
+                self._stdout.write(f"{history}\r\n\r\n❯ ")
+                
+            elif subcmd == "actions":
+                actions = wallet_manager.get_action_history(self._username, 20)
+                self._stdout.write(f"{Colors.BOLD}{Colors.CYAN}🎮 Recent Game Actions{Colors.RESET}\r\n")
+                self._stdout.write("=" * 50 + "\r\n")
+                
+                if not actions:
+                    self._stdout.write(f"{Colors.DIM}No game actions found.{Colors.RESET}\r\n")
+                else:
+                    for action in actions:
+                        import time
+                        timestamp = time.strftime("%m-%d %H:%M", time.localtime(action['timestamp']))
+                        action_type = action['action_type'].replace('_', ' ').title()
+                        amount = action['amount']
+                        room = action['room_code']
+                        
+                        line = f"  {timestamp} | {action_type:<15} | ${amount:<6} | Room: {room}"
+                        if action['details']:
+                            line += f"\r\n    {Colors.DIM}{action['details']}{Colors.RESET}"
+                        
+                        self._stdout.write(line + "\r\n")
+                
+                self._stdout.write("\r\n❯ ")
+                
+            elif subcmd == "leaderboard":
+                leaderboard = wallet_manager.get_leaderboard()
+                self._stdout.write(f"{leaderboard}\r\n\r\n❯ ")
+                
+            elif subcmd == "add":
+                # Claim hourly bonus
+                success, message = wallet_manager.claim_hourly_bonus(self._username)
+                self._stdout.write(f"{message}\r\n\r\n❯ ")
+                
+            elif subcmd == "save":
+                # Manual save to database
+                success = wallet_manager.save_wallet_to_database(self._username)
+                if success:
+                    self._stdout.write(f"✅ Wallet saved to database successfully!\r\n\r\n❯ ")
+                else:
+                    self._stdout.write(f"❌ Failed to save wallet to database\r\n\r\n❯ ")
+                    
+            elif subcmd == "saveall":
+                # Admin command to save all cached wallets
+                if self._username in ['admin', 'root']:  # Basic admin check
+                    saved_count = wallet_manager.save_all_wallets()
+                    self._stdout.write(f"✅ Saved {saved_count} wallets to database\r\n\r\n❯ ")
+                else:
+                    self._stdout.write(f"❌ Admin privileges required for saveall command\r\n\r\n❯ ")
+                        
+            else:
+                self._stdout.write(f"❌ Unknown wallet command: {subcmd}\r\n")
+                self._stdout.write("💡 Available: history, actions, leaderboard, add, save, saveall\r\n\r\n❯ ")
+            
+            await self._stdout.drain()
+            
+        except Exception as e:
+            self._stdout.write(f"❌ Error in wallet command: {e}\r\n\r\n❯ ")
+            await self._stdout.drain()
+
     async def _show_whoami(self):
         """Show connection information."""
         try:
@@ -727,13 +880,19 @@ class RoomSession:
 
     async def _register_player_for_room(self, name: str, room):
         """Register a player for the session in the given room."""
+        logging.debug(f"Registering player {name} for room")
+        
         existing = next((p for p in room.pm.players if p.name == name), None)
         if existing is not None:
+            logging.debug(f"Player {name} already exists, using existing player")
             player = existing
         else:
+            logging.debug(f"Creating new player {name}")
             player = room.pm.register_player(name)
+            logging.debug(f"Player {name} created successfully")
 
         room.session_map[self] = player
+        logging.debug(f"Player {name} mapped to session")
 
         async def actor(game_state: Dict[str, Any]):
             try:
@@ -918,6 +1077,30 @@ class RoomSession:
         player.actor = actor
         return player
 
+    async def _broadcast_ai_thinking_status(self, ai_name: str, is_thinking: bool, room):
+        """Broadcast AI thinking status to all players in the room."""
+        if not hasattr(room, 'ai_thinking_status'):
+            room.ai_thinking_status = {}
+        
+        room.ai_thinking_status[ai_name] = is_thinking
+        
+        # Simple status update - no animations, just like human players
+        for session, session_player in list(room.session_map.items()):
+            try:
+                if session._stdout.is_closing():
+                    continue
+                
+                if is_thinking:
+                    # Simple thinking message, similar to human players
+                    session._stdout.write(f"⏳ Waiting for 🤖 {Colors.CYAN}{ai_name}{Colors.RESET} to make their move...\r\n")
+                else:
+                    # Clear the line when done
+                    session._stdout.write(f"\r\033[K")
+                
+                await session._stdout.drain()
+            except Exception as e:
+                logging.error(f"Error broadcasting AI thinking status to {session_player.name}: {e}")
+
     async def _broadcast_waiting_status(self, current_player_name: str, game_state: Dict[str, Any], room):
         """Broadcast the current game state to all players in the room showing who they're waiting for."""
         for session, session_player in list(room.session_map.items()):
@@ -938,9 +1121,9 @@ class RoomSession:
                     if current_player_name:
                         current_player_obj = next((p for p in room.pm.players if p.name == current_player_name), None)
                         if current_player_obj and current_player_obj.is_ai:
-                            session._stdout.write(f"⏳ Waiting for {Colors.CYAN}🤖 {current_player_name}{Colors.RESET} (AI is thinking...)\r\n")
+                            session._stdout.write(f"⏳ Waiting for 🤖 {Colors.CYAN}{current_player_name}{Colors.RESET} to make their move...\r\n")
                         else:
-                            session._stdout.write(f"⏳ Waiting for {Colors.CYAN}👤 {current_player_name}{Colors.RESET} to make their move...\r\n")
+                            session._stdout.write(f"⏳ Waiting for 👤 {Colors.CYAN}{current_player_name}{Colors.RESET} to make their move...\r\n")
                     else:
                         session._stdout.write(f"⏳ Waiting for game to continue...\r\n")
                 else:
@@ -996,29 +1179,68 @@ class RoomSession:
                 min_players = 4
                 current_count = len(total_players)
                 
+                logging.debug(f"Current players: {current_count}, minimum needed: {min_players}")
+                
                 if current_count < min_players:
                     ai_names = ["AI_Alice", "AI_Bob", "AI_Charlie", "AI_David", "AI_Eve"]
                     existing_ai_names = {p.name for p in total_players if p.is_ai}
                     
-                    for i in range(min_players - current_count):
-                        # find unused AI name
-                        ai_name = next((name for name in ai_names if name not in existing_ai_names), f"AI_Player_{i+1}")
-                        existing_ai_names.add(ai_name)
+                    # Try to add AI players until we reach minimum
+                    added_ais = 0
+                    for ai_name in ai_names:
+                        if added_ais >= (min_players - current_count):
+                            break
                         
-                        # Create AI player
+                        if ai_name in existing_ai_names:
+                            continue  # AI already exists
+                        
+                        # Check if AI can respawn (if previously broke)
+                        try:
+                            from poker.database import get_database
+                            db = get_database()
+                            if not db.can_ai_respawn(ai_name):
+                                logging.debug(f"AI {ai_name} still on respawn cooldown, skipping")
+                                continue
+                            
+                            # If AI was broke before, mark as respawned
+                            db.respawn_ai(ai_name)
+                        except Exception as e:
+                            logging.error(f"Error checking AI respawn status: {e}")
+                        
+                        logging.debug(f"Adding AI player: {ai_name}")
+                        
+                        # Create AI player with 200 chips
                         ai_player = room.pm.register_player(ai_name, is_ai=True, chips=200)
                         
                         # Set up AI actor
                         from poker.ai import PokerAI
                         ai = PokerAI(ai_player)
+                        
+                        # Set up thinking callback to notify all players
+                        async def thinking_callback(ai_name: str, is_thinking: bool):
+                            await self._broadcast_ai_thinking_status(ai_name, is_thinking, room)
+                        
+                        ai.thinking_callback = thinking_callback
                         ai_player.actor = ai.decide_action
                         
+                        added_ais += 1
+                        
                 players = list(room.pm.players)
+                logging.debug(f"Final player list: {[p.name for p in players]}")
+                
                 room.game_in_progress = True
                 try:
                     from poker.game import Game
-                    game = Game(players)
+                    logging.debug("Creating game instance")
+                    game = Game(players, room.pm)  # Pass PlayerManager for logging
+                    
+                    logging.debug("Starting game round")
                     result = await game.start_round()
+                    logging.debug(f"Game round completed: {result}")
+                    
+                    # Return chips to wallets and update stats
+                    logging.debug("Returning chips to wallets and updating stats")
+                    room.pm.finish_round()
 
                     # broadcast results to sessions in this room
                     for session, player in list(room.session_map.items()):
@@ -1097,6 +1319,7 @@ class RoomSession:
                             session._stdout.write(f"{Colors.YELLOW}{'='*30}{Colors.RESET}\r\n\r\n❯ ")
                             await session._stdout.drain()
                         except Exception as e:
+                            logging.error(f"Error broadcasting game results to {player.name}: {e}")
                             # Fallback to simple display or skip if connection is closed
                             try:
                                 session._stdout.write(f"Round finished. Winners: {', '.join(result.get('winners', []))}\r\n❯ ")
@@ -1106,10 +1329,19 @@ class RoomSession:
                                 if session in room.session_map:
                                     del room.session_map[session]
 
+                except Exception as e:
+                    logging.error(f"Error during game execution: {e}")
+                    import traceback
+                    logging.error(traceback.format_exc())
+                    raise
                 finally:
                     room.game_in_progress = False
+                    logging.debug("Game finished, game_in_progress set to False")
                     
         except Exception as e:
+            logging.error(f"Failed to start game: {e}")
+            import traceback
+            logging.error(traceback.format_exc())
             self._stdout.write(f"❌ Failed to start game: {e}\r\n\r\n❯ ")
             await self._stdout.drain()
 
@@ -1147,6 +1379,18 @@ class RoomSession:
             logging.info(f"RoomSession.connection_lost: {exc}")
         else:
             logging.debug("RoomSession.connection_lost: Clean disconnection")
+        
+        # Auto-save wallet on disconnect
+        if hasattr(self, '_username') and self._username:
+            try:
+                from poker.wallet import get_wallet_manager
+                wallet_manager = get_wallet_manager()
+                wallet_manager.on_player_disconnect(self._username)
+                logging.info(f"Auto-saved wallet for {self._username} during connection_lost")
+            except Exception as e:
+                logging.warning(f"Error auto-saving wallet for {self._username} during connection_lost: {e}")
+        else:
+            logging.debug("No username available during connection_lost, skipping wallet save")
         
         # Mark session for cleanup
         self._should_exit = True
