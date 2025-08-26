@@ -218,7 +218,7 @@ Your options:
 2. CALL - Match the current bet (amount: {call_amount})
 3. RAISE - Increase the bet (amount: more than {call_amount})
 
-PLAY AGGRESSIVELY (but within reason please)! You should raise to build pots and put pressure on opponents. Consider raising with:
+PLAY FAIRLY AGGRESSIVELY (but within reason please)! You should raise to build pots and put pressure on opponents. Consider raising with:
 - Any pair
 - Any ace or king
 - Suited connectors
@@ -288,8 +288,8 @@ Respond with JSON: {{"action": "fold/call/raise", "amount": number}}
         elif action == 'call':
             amount = call_amount
         elif action == 'raise':
-            # Ensure raise is at least a call + minimum raise
-            min_raise = call_amount + 10
+            # Honor AI's raise amount if it's at least a valid raise
+            min_raise = call_amount + 1  # Minimum raise is just 1 more than call
             if amount < min_raise:
                 amount = min_raise
             # Ensure we have enough chips
