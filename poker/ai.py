@@ -114,7 +114,7 @@ class PokerAI:
         # Prepare the game state for the AI
         prompt = self._create_poker_prompt(game_state)
         
-        # Add a small delay to simulate thinking (reduced)
+        # Add a small delay to simulate thinking
         await asyncio.sleep(random.uniform(0.2, 0.6))
         
         try:
