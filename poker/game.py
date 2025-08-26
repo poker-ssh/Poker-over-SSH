@@ -375,7 +375,7 @@ class Game:
                         else:
                             self.action_history.append(f"{p.name} checked")
                         
-                elif a == 'bet':
+                elif a in ('bet', 'raise'):
                     # Bet the specified amount (must be positive)
                     if amt <= 0:
                         # Invalid bet amount, treat as check/call

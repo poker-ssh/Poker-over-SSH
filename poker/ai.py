@@ -137,6 +137,10 @@ class PokerAI:
             
             # Parse the AI response
             content = response.choices[0].message.content
+            
+            # DEBUG: Log the raw AI response
+            print(f"🤖 DEBUG [{self.player.name}] Raw AI response: {repr(content)}")
+            
             if not content:
                 print("AI returned empty response, using fallback")
                 return await self._simple_decision(game_state)
@@ -156,7 +160,9 @@ class PokerAI:
                     decision = self._parse_text_decision(content)
                 
                 # Validate and sanitize the decision
-                return self._validate_decision(decision, game_state)
+                validated_decision = self._validate_decision(decision, game_state)
+                print(f"🤖 DEBUG [{self.player.name}] Final decision: {validated_decision}")
+                return validated_decision
                 
             except (json.JSONDecodeError, KeyError):
                 # If JSON parsing fails, try to interpret the text
@@ -212,12 +218,14 @@ Your options:
 2. CALL - Match the current bet (amount: {call_amount})
 3. RAISE - Increase the bet (amount: more than {call_amount})
 
-Consider:
-- Hand strength
-- Position
-- Pot odds
-- Opponent behavior
-- Stack size
+PLAY AGGRESSIVELY (but within reason please)! You should raise to build pots and put pressure on opponents. Consider raising with:
+- Any pair
+- Any ace or king
+- Suited connectors
+- Drawing hands
+- Bluffs to steal pots
+
+Be bold and raise often! Don't just call - RAISE to win (not TOO aggressive though)!
 
 Respond with JSON: {{"action": "fold/call/raise", "amount": number}}
 """
@@ -334,30 +342,56 @@ Respond with JSON: {{"action": "fold/call/raise", "amount": number}}
         # If nobody has bet (everyone checked), prefer to check rather than folding.
         # Returning a 'call' with amount 0 represents a check in this codebase.
         if call_amount == 0:
-            return {'action': 'call', 'amount': 0}
+            decision = {'action': 'call', 'amount': 0}
+            print(f"🤖 DEBUG [{self.player.name}] Simple AI decision (check): {decision}")
+            return decision
 
         # If we don't have enough money to call, fold
         if call_amount > chips:
-            return {'action': 'fold', 'amount': 0}
+            decision = {'action': 'fold', 'amount': 0}
+            print(f"🤖 DEBUG [{self.player.name}] Simple AI decision (broke): {decision}")
+            return decision
 
-        # Very naive rules
+        # Very naive rules - now more aggressive!
         if not community:
             # preflop
             ranks = sorted([c[0] for c in self.player.hand], reverse=True)
-            # pocket pair or at least one high card -> call
-            if ranks[0] == ranks[1] or ranks[0] >= 11 or ranks[1] >= 11:
-                return {'action': 'call', 'amount': call_amount}
-            return {'action': 'fold', 'amount': 0}
+            # pocket pair or high cards -> RAISE!
+            if ranks[0] == ranks[1]:  # pocket pair
+                raise_amount = call_amount + 20
+                decision = {'action': 'raise', 'amount': min(raise_amount, chips)}
+                print(f"🤖 DEBUG [{self.player.name}] Simple AI decision (preflop pair - RAISE): {decision}")
+                return decision
+            elif ranks[0] >= 12 or ranks[1] >= 12:  # face card
+                raise_amount = call_amount + 15
+                decision = {'action': 'raise', 'amount': min(raise_amount, chips)}
+                print(f"🤖 DEBUG [{self.player.name}] Simple AI decision (preflop high card - RAISE): {decision}")
+                return decision
+            elif ranks[0] >= 11 or ranks[1] >= 11:  # jack or better
+                decision = {'action': 'call', 'amount': call_amount}
+                print(f"🤖 DEBUG [{self.player.name}] Simple AI decision (preflop decent hand): {decision}")
+                return decision
+            decision = {'action': 'fold', 'amount': 0}
+            print(f"🤖 DEBUG [{self.player.name}] Simple AI decision (preflop bad hand): {decision}")
+            return decision
 
-        # Postflop: if we have any pair with community, stay in
+        # Postflop: if we have any pair with community, RAISE!
         my_ranks = [c[0] for c in self.player.hand]
         comm_ranks = [c[0] for c in community]
         if any(r in comm_ranks for r in my_ranks):
-            return {'action': 'call', 'amount': call_amount}
+            # We paired - let's raise!
+            raise_amount = call_amount + 25
+            decision = {'action': 'raise', 'amount': min(raise_amount, chips)}
+            print(f"🤖 DEBUG [{self.player.name}] Simple AI decision (postflop pair - RAISE): {decision}")
+            return decision
 
         # If low chips, conserve
         if chips < 50:
-            return {'action': 'fold', 'amount': 0}
+            decision = {'action': 'fold', 'amount': 0}
+            print(f"🤖 DEBUG [{self.player.name}] Simple AI decision (low chips): {decision}")
+            return decision
 
         # default to check/call
-        return {'action': 'call', 'amount': call_amount}
+        decision = {'action': 'call', 'amount': call_amount}
+        print(f"🤖 DEBUG [{self.player.name}] Simple AI decision: {decision}")
+        return decision
