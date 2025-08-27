@@ -312,6 +312,8 @@ class Game:
 
                 a = act.get('action')
                 amt = int(act.get('amount', 0))
+
+                logging.debug(f"Player {p.name} action: {a}, amount: {amt}")
                 
                 # Remove player from players_to_act - they've now acted
                 players_to_act.discard(p.name)
