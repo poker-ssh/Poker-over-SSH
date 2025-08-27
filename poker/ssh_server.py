@@ -962,6 +962,11 @@ class RoomSession:
                         line = line.decode('utf-8', errors='ignore')
                     line = (line or "").strip()
                     
+                    # Fix for character loss issue: prepend any buffered input from background reader
+                    if self._input_buffer:
+                        line = self._input_buffer + line
+                        self._input_buffer = ""  # Clear buffer after using it
+                    
                     if not line:
                         self._stdout.write(f"❓ Please enter an action. Type 'help' for options: ")
                         await self._stdout.drain()
@@ -1066,12 +1071,8 @@ class RoomSession:
                         return {'action': 'bet', 'amount': amt}
                     
                     # Unknown command
-                    # Show info lines with newlines, then keep the final prompt on the same input line
                     self._stdout.write(f"❓ {Colors.YELLOW}Unknown command '{cmd}'. Type 'help' for options.{Colors.RESET}\r\n")
-                    # TODO - fix this known bug
-                    # Sometimes the first char of input gets stripped. so we need to tell user to add another character
-                    self._stdout.write(f"💡 {Colors.YELLOW}If you are sure you typed the right command, try adding a space before your command!{Colors.RESET}\r\n")
-                    self._stdout.write("⚠️ This is a known issue, and we are working on it. Please type your command again (see above): ")
+                    self._stdout.write("Enter your action: ")
                     await self._stdout.drain()
                     
             except Exception:
