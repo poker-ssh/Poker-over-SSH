@@ -1066,7 +1066,12 @@ class RoomSession:
                         return {'action': 'bet', 'amount': amt}
                     
                     # Unknown command
-                    self._stdout.write(f"❓ {Colors.YELLOW}Unknown command '{cmd}'. Type 'help' for options:{Colors.RESET} ")
+                    # Show info lines with newlines, then keep the final prompt on the same input line
+                    self._stdout.write(f"❓ {Colors.YELLOW}Unknown command '{cmd}'. Type 'help' for options.{Colors.RESET}\r\n")
+                    # TODO - fix this known bug
+                    # Sometimes the first char of input gets stripped. so we need to tell user to add another character
+                    self._stdout.write(f"💡 {Colors.YELLOW}If you are sure you typed the right command, try adding a space before your command!{Colors.RESET}\r\n")
+                    self._stdout.write("⚠️ This is a known issue, and we are working on it. Please type your command again (see above): ")
                     await self._stdout.drain()
                     
             except Exception:

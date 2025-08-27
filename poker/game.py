@@ -312,6 +312,8 @@ class Game:
 
                 a = act.get('action')
                 amt = int(act.get('amount', 0))
+
+                logging.debug(f"Player {p.name} action: {a}, amount: {amt}")
                 
                 logging.debug(f"Player {p.name} action: {a}, amount: {amt}")
                 
@@ -377,7 +379,7 @@ class Game:
                         else:
                             self.action_history.append(f"{p.name} checked")
                         
-                elif a == 'bet':
+                elif a in ('bet', 'raise'):
                     # Bet the specified amount (must be positive)
                     if amt <= 0:
                         # Invalid bet amount, treat as check/call
