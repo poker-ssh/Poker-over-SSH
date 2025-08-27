@@ -17,6 +17,8 @@ class Colors:
     WHITE = '\033[37m'
     BOLD = '\033[1m'
     DIM = '\033[2m'
+    GREY = '\033[90m'
+    GREY_256 = '\033[38;5;240m'
     RESET = '\033[0m'
     BG_WHITE = '\033[47m'
     BG_BLACK = '\033[40m'
@@ -84,6 +86,15 @@ def cards_horizontal(cards):
 class TerminalUI:
     def __init__(self, player_name: str):
         self.player_name = player_name
+        self.cards_hidden = False  # Track whether player has hidden their cards
+
+    def toggle_cards_visibility(self) -> str:
+        """Toggle the visibility of player's cards and return status message."""
+        self.cards_hidden = not self.cards_hidden
+        if self.cards_hidden:
+            return f"{Colors.YELLOW}🙈 Cards now hidden{Colors.RESET}"
+        else:
+            return f"{Colors.GREEN}👀 Cards now visible{Colors.RESET}"
 
     def render(self, game_state: dict, player_hand=None, action_history=None, show_all_hands=False) -> str:
         """Render the current game state as a colorized string with optional action history and all hands."""
@@ -142,10 +153,26 @@ class TerminalUI:
         
         # Player's hand (if provided)
         if player_hand:
-            hand_cards = cards_horizontal(player_hand)
-            out.append(f"{Colors.BOLD}{Colors.CYAN}🂠 Your Hand:{Colors.RESET}")
-            for line in hand_cards.split('\n'):
-                out.append(f"   {line}")
+            # Show hide/show button - text-based only for reliability
+            button_text = "👀 SHOW CARDS" if self.cards_hidden else "🙈 HIDE CARDS"
+            button_color = Colors.GREEN if self.cards_hidden else Colors.YELLOW
+            
+            # Create a visual button display (no hyperlink to avoid browser issues)
+            button_display = f"[{button_color}{Colors.BOLD} {button_text} {Colors.RESET}]"
+            
+            out.append(f"{Colors.BOLD}{Colors.CYAN}🂠 Your Hand:{Colors.RESET} {button_display}")
+            out.append(f"   {Colors.DIM}{Colors.GREY_256}(Type 'togglecards' or 'tgc' to change){Colors.RESET}")
+            
+            if not self.cards_hidden:
+                # Show cards normally
+                hand_cards = cards_horizontal(player_hand)
+                for line in hand_cards.split('\n'):
+                    out.append(f"   {line}")
+            else:
+                # Show hidden cards placeholder
+                out.append(f"   {Colors.DIM}╭─────╮ ╭─────╮{Colors.RESET}")
+                out.append(f"   {Colors.DIM}│ ??? │ │ ??? │  {Colors.CYAN}[Cards hidden for privacy]{Colors.RESET}")
+                out.append(f"   {Colors.DIM}╰─────╯ ╰─────╯{Colors.RESET}")
             out.append("")
         
         # Community cards with phase indicator
@@ -191,7 +218,7 @@ class TerminalUI:
                             from poker.game import hand_description
                             hand_rank, tiebreakers = hand_evaluations[player_name]
                             hand_desc = f" ({hand_description(hand_rank, tiebreakers)})"
-                        except Exception:
+                        except (ImportError, KeyError, ValueError, AttributeError):
                             pass
                     
                     out.append(f"   {indicator} {Colors.BOLD}{player_name}{Colors.RESET}{Colors.DIM}{hand_desc}{Colors.RESET}:")
