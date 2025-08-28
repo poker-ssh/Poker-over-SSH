@@ -46,7 +46,7 @@ HAND_RANKS = {
 }
 
 
-def is_already_bet(amt: int, current_bet: int, player_current_bet: int) -> bool:
+def is_already_bet(amt: int, player_current_bet: int) -> bool:
     """Check if the player is trying to bet the same amount they already bet."""
     return amt == player_current_bet
 
@@ -212,7 +212,8 @@ class Game:
         self.deck: List[Card] = []
         self.pot = 0
         self.community: List[Card] = []
-        self.bets: Dict[str, int] = {}
+        self.bets: Dict[str, int] = {}  # Total bets across all rounds
+        self.round_bets: Dict[str, int] = {}  # Current betting round only
         self.action_history: List[str] = []
 
     def _reset_round(self):
@@ -221,6 +222,7 @@ class Game:
         self.pot = 0
         self.community = []
         self.bets = {p.name: 0 for p in self.players}
+        self.round_bets = {p.name: 0 for p in self.players}
         self.action_history = []
         for p in self.players:
             p.hand = []
@@ -248,6 +250,10 @@ class Game:
         self._draw(1)
         self.community.extend(self._draw(1))
 
+    def _reset_round_bets(self):
+        """Reset betting amounts for the current betting round."""
+        self.round_bets = {p.name: 0 for p in self.players}
+
     async def betting_round(self, allow_checks: bool = True, min_bet: int = 0):
         """Proper poker betting round: continue until all active players have called or folded.
 
@@ -259,6 +265,9 @@ class Game:
                       if you want to force at least a small blind/ante-like bet).
         min_bet: the minimum bet amount to enforce when current bet is 0.
         """
+        
+        # Reset round bets at the start of each betting round
+        self._reset_round_bets()
         
         # Get list of active players who can act
         active_players = [p for p in self.players if p.state == 'active']
@@ -290,9 +299,9 @@ class Game:
                         players_to_act.discard(p.name)
                         continue
                 
-                # Calculate current bet fresh for each player's turn
-                current_bet = max(self.bets.values()) if self.bets else 0
-                player_current_bet = self.bets[p.name]
+                # Calculate current bet for this betting round only
+                current_bet = max(self.round_bets.values()) if self.round_bets else 0
+                player_current_bet = self.round_bets[p.name]
                 
                 try:
                     # Pass the current game state to the player with current player info
@@ -313,9 +322,9 @@ class Game:
                 a = act.get('action')
                 amt = int(act.get('amount', 0))
 
-                logging.debug(f"Player {p.name} action: {a}, amount: {amt}")
+                logging.debug("Player %s action: %s, amount: %s", p.name, a, amt)
                 
-                logging.debug(f"Player {p.name} action: {a}, amount: {amt}")
+                logging.debug("Player %s action: %s, amount: %s", p.name, a, amt)
                 
                 # Remove player from players_to_act - they've now acted
                 players_to_act.discard(p.name)
@@ -330,6 +339,7 @@ class Game:
                     pay = min(call_amount, p.chips)
                     p.chips -= pay
                     self.bets[p.name] += pay
+                    self.round_bets[p.name] += pay
                     self.pot += pay
                     
                     if p.chips == 0 and pay < call_amount:
@@ -353,6 +363,7 @@ class Game:
                         pay = min(call_amount, p.chips)
                         p.chips -= pay
                         self.bets[p.name] += pay
+                        self.round_bets[p.name] += pay
                         self.pot += pay
                         self.action_history.append(f"{p.name} called ${call_amount} (check converted to call)")
                         if p.chips == 0:
@@ -365,6 +376,7 @@ class Game:
                                 pay = min(bet_amount, p.chips)
                                 p.chips -= pay
                                 self.bets[p.name] += pay
+                                self.round_bets[p.name] += pay
                                 self.pot += pay
                                 self.action_history.append(f"{p.name} bet ${min_bet} (check converted to min bet)")
                                 if p.chips == 0:
@@ -388,6 +400,7 @@ class Game:
                             pay = min(call_amount, p.chips)
                             p.chips -= pay
                             self.bets[p.name] += pay
+                            self.round_bets[p.name] += pay
                             self.pot += pay
                             self.action_history.append(f"{p.name} called ${call_amount} (invalid bet)")
                         else:
@@ -410,6 +423,7 @@ class Game:
                             pay = min(bet_amount, p.chips)
                             p.chips -= pay
                             self.bets[p.name] += pay
+                            self.round_bets[p.name] += pay
                             self.pot += pay
                             action_msg = f"{p.name} bet ${amt}"
                             self.action_history.append(action_msg)
@@ -418,7 +432,7 @@ class Game:
                             # This is a new bet - all other active players need to act
                             players_to_act = set(player.name for player in self.players 
                                                if player.state == 'active' and player.name != p.name)
-                        elif is_already_bet(amt, current_bet, player_current_bet):
+                        elif is_already_bet(amt, player_current_bet):
                             # Player is trying to bet the same amount they already bet - treat as check
                             self.action_history.append(f"{p.name} checked (already bet ${amt})")
                         elif amt <= current_bet:
@@ -427,6 +441,7 @@ class Game:
                             pay = min(call_amount, p.chips)
                             p.chips -= pay
                             self.bets[p.name] += pay
+                            self.round_bets[p.name] += pay
                             self.pot += pay
                             if call_amount > 0:
                                 self.action_history.append(f"{p.name} called ${call_amount} (bet ${amt} insufficient for raise)")
@@ -442,6 +457,7 @@ class Game:
                             pay = min(bet_amount, p.chips)
                             p.chips -= pay
                             self.bets[p.name] += pay
+                            self.round_bets[p.name] += pay
                             self.pot += pay
                             action_msg = f"{p.name} raised to ${amt}"
                             self.action_history.append(action_msg)
@@ -506,6 +522,7 @@ class Game:
         state = {
             'community': list(self.community),
             'bets': dict(self.bets),
+            'round_bets': dict(self.round_bets),
             'pot': self.pot,
             'players': [(p.name, p.chips, p.state, p.is_ai) for p in self.players],
             'action_history': list(self.action_history),
