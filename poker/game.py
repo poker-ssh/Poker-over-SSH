@@ -408,7 +408,7 @@ class Game:
                     else:
                         # Valid bet amount - determine if it's a valid raise
                         if current_bet == 0:
-                            # No one has bet yet - any positive amount is valid
+                            # No one has bet yet - any positive amount is valid (this is a "bet")
                             # Enforce min_bet if provided
                             if min_bet > 0 and amt < min_bet:
                                 # Treat as invalid/too small bet -> check/fold depending
@@ -434,7 +434,7 @@ class Game:
                                                if player.state == 'active' and player.name != p.name)
                         elif is_already_bet(amt, player_current_bet):
                             # Player is trying to bet the same amount they already bet - treat as check
-                            self.action_history.append(f"{p.name} checked (already bet ${amt})")
+                            self.action_history.append(f"{p.name} checked (already at ${amt})")
                         elif amt <= current_bet:
                             # Bet amount is not enough to raise
                             call_amount = max(current_bet - player_current_bet, 0)
@@ -444,15 +444,15 @@ class Game:
                             self.round_bets[p.name] += pay
                             self.pot += pay
                             if call_amount > 0:
-                                self.action_history.append(f"{p.name} called ${call_amount} (bet ${amt} insufficient for raise)")
+                                self.action_history.append(f"{p.name} called ${call_amount} (amount ${amt} insufficient for raise)")
                             else:
                                 # Player tried to bet the same amount they already bet - treat as check
                                 if amt == current_bet and player_current_bet == current_bet:
-                                    self.action_history.append(f"{p.name} checked (already bet ${amt})")
+                                    self.action_history.append(f"{p.name} checked (already at ${amt})")
                                 else:
-                                    self.action_history.append(f"{p.name} checked (bet ${amt} insufficient for raise)")
+                                    self.action_history.append(f"{p.name} checked (amount ${amt} insufficient for raise)")
                         else:
-                            # Valid raise - amt is higher than current bet
+                            # Valid raise - amt is higher than current bet (this is a "raise")
                             bet_amount = amt - player_current_bet
                             pay = min(bet_amount, p.chips)
                             p.chips -= pay
