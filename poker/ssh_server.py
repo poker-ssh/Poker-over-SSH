@@ -44,6 +44,10 @@ class RoomSession:
             from poker.terminal_ui import Colors
             from poker.server_info import get_server_info, format_motd
             
+            # Disable mouse mode to prevent interference with game input
+            # This prevents accidental mouse events from affecting gameplay
+            self._stdout.write("\033[?1000l\033[?1002l\033[?1003l")  # Disable mouse tracking
+            
             server_info = get_server_info()
             motd = format_motd(server_info)
             
@@ -154,6 +158,37 @@ class RoomSession:
 
     async def _handle_char(self, char: str):
         """Handle character input."""
+        # Handle escape sequences
+        if char == '\x1b':  # ESC - start of escape sequence
+            # Try to read more characters to see if it's an escape sequence
+            try:
+                # Read the next few characters to detect escape sequences
+                next_chars = await asyncio.wait_for(self._stdin.read(10), timeout=0.1)
+                if isinstance(next_chars, bytes):
+                    next_chars = next_chars.decode('utf-8', errors='ignore')
+                
+                full_sequence = char + next_chars
+                
+                # Check for common mouse events and function keys - discard them
+                # Common sequences: ESC[M, ESC[<, ESC[?, function keys, etc.
+                if any(pattern in full_sequence for pattern in ['[M', '[<', '[?', 'OP', 'OQ', 'OR', 'OS']):
+                    # This is likely a mouse event or function key - discard it
+                    logging.debug(f"Discarding mouse/escape sequence: {repr(full_sequence)}")
+                    return
+                
+                # If not a recognized control sequence and contains printable chars, treat as regular input
+                # But be conservative - only add if it looks like regular text
+                if any(c.isprintable() and c not in '\x1b\x00\x7f' for c in full_sequence):
+                    self._input_buffer += full_sequence
+                else:
+                    logging.debug(f"Discarding unrecognized escape sequence: {repr(full_sequence)}")
+                
+            except asyncio.TimeoutError:
+                # No additional characters, could be a legitimate ESC key press
+                # Only add to buffer if we're expecting text input
+                self._input_buffer += char
+            return
+        
         if char == '\r' or char == '\n':
             cmd = self._input_buffer.strip()
             self._input_buffer = ""
@@ -257,6 +292,11 @@ class RoomSession:
             await self._handle_wallet_command(cmd)
             return
 
+        if cmd.lower() in ("togglecards", "tgc"):
+            logging.debug(f"User {self._username} toggling card visibility")
+            await self._handle_toggle_cards()
+            return
+
         # Unknown command
         logging.debug(f"User {self._username} used unknown command: {cmd}")
         try:
@@ -309,6 +349,7 @@ class RoomSession:
             self._stdout.write("  start    Start a poker round (requires 1+ human players)\r\n")
             self._stdout.write("  wallet   Show your wallet balance and stats\r\n")
             self._stdout.write("  roomctl  Room management commands\r\n")
+            self._stdout.write("  togglecards / tgc  - Toggle card visibility for privacy\r\n")
             self._stdout.write("  quit     Disconnect\r\n")
             self._stdout.write("\r\n💰 Wallet Commands:\r\n")
             self._stdout.write("  wallet               - Show wallet balance and stats\r\n")
@@ -326,6 +367,9 @@ class RoomSession:
             self._stdout.write("  roomctl share          - Share current room code\r\n")
             self._stdout.write("  roomctl extend         - Extend current room by 30 minutes\r\n")
             self._stdout.write("  roomctl delete         - Delete current room (creator only)\r\n")
+            self._stdout.write("\r\n🎮 Game Commands:\r\n")
+            self._stdout.write("  togglecards / tgc  - Toggle card visibility for privacy\r\n")
+            self._stdout.write("  togglecards            - Toggle card visibility on/off\r\n")
             self._stdout.write("\r\n💡 Tips:\r\n")
             self._stdout.write("  - Your wallet persists across server restarts\r\n")
             self._stdout.write("  - All actions are logged to the database\r\n")
@@ -333,6 +377,8 @@ class RoomSession:
             self._stdout.write("  - The default room never expires\r\n")
             self._stdout.write("  - Room codes are private and only visible to creators and members\r\n")
             self._stdout.write("  - Use 'roomctl share' to get your room's code to share with friends\r\n")
+            self._stdout.write("  - Hide/show cards for privacy when streaming or when others can see your screen\r\n")
+            self._stdout.write("  - Card visibility can be toggled by clicking the button or using commands\r\n")
             self._stdout.write("\r\n❯ ")
             await self._stdout.drain()
         except Exception:
@@ -612,6 +658,65 @@ class RoomSession:
             await self._stdout.drain()
         except Exception as e:
             self._stdout.write(f"❌ Error deleting room: {e}\r\n\r\n❯ ")
+            await self._stdout.drain()
+
+    async def _handle_toggle_cards(self):
+        """Handle toggling card visibility for the current player."""
+        try:
+            if not self._server_state or not self._username:
+                self._stdout.write("❌ Server state or username not available\r\n\r\n❯ ")
+                await self._stdout.drain()
+                return
+                
+            room = self._server_state.room_manager.get_room(self._current_room)
+            if not room:
+                self._stdout.write(f"❌ Current room not found\r\n\r\n❯ ")
+                await self._stdout.drain()
+                return
+            
+            # Find the player's TerminalUI instance and toggle cards
+            if self in room.session_map:
+                player = room.session_map[self]
+                
+                # Check if game is in progress to see current game state
+                if room.game_in_progress:
+                    # Get the player's UI instance - we need to store this somewhere accessible
+                    # For now, create a temporary UI instance to toggle state
+                    from poker.terminal_ui import TerminalUI
+                    
+                    # Store UI state in session or player object if not already there
+                    if not hasattr(self, '_ui'):
+                        self._ui = TerminalUI(player.name)
+                    
+                    status_msg = self._ui.toggle_cards_visibility()
+                    self._stdout.write(f"{status_msg}\r\n")
+                    
+                    # Re-render the current game state if game is active
+                    if hasattr(room, '_current_game_state') and room._current_game_state:
+                        view = self._ui.render(
+                            room._current_game_state, 
+                            player_hand=player.hand if hasattr(player, 'hand') else None
+                        )
+                        self._stdout.write(f"\r{view}\r\n")
+                    
+                else:
+                    # No active game, just show the toggle status
+                    from poker.terminal_ui import TerminalUI
+                    if not hasattr(self, '_ui'):
+                        self._ui = TerminalUI(player.name)
+                    
+                    status_msg = self._ui.toggle_cards_visibility()
+                    self._stdout.write(f"{status_msg}\r\n")
+                    self._stdout.write(f"💡 Card visibility setting will apply when the next game starts.\r\n")
+                
+                self._stdout.write("❯ ")
+                await self._stdout.drain()
+            else:
+                self._stdout.write(f"❌ You must be seated to toggle card visibility. Use '{Colors.GREEN}seat{Colors.RESET}' first.\r\n\r\n❯ ")
+                await self._stdout.drain()
+                
+        except Exception as e:
+            self._stdout.write(f"❌ Error toggling cards: {e}\r\n\r\n❯ ")
             await self._stdout.drain()
 
     async def _handle_wallet(self):
@@ -902,12 +1007,14 @@ class RoomSession:
                     # Broadcast to others that they're waiting for this player
                     await self._broadcast_waiting_status(player.name, game_state, room)
                 
-                from poker.terminal_ui import TerminalUI
-                ui = TerminalUI(player.name)
+                # Use the persistent UI instance that maintains card visibility state
+                if not hasattr(self, '_ui'):
+                    from poker.terminal_ui import TerminalUI
+                    self._ui = TerminalUI(player.name)
                 
                 # show public state and player's private hand
                 action_history = game_state.get('action_history', [])
-                view = ui.render(game_state, player_hand=player.hand, action_history=action_history)
+                view = self._ui.render(game_state, player_hand=player.hand, action_history=action_history)
                 
                 # Check if session is still connected
                 if self._stdout.is_closing():
@@ -984,7 +1091,20 @@ class RoomSession:
                             if not is_preflop:
                                 self._stdout.write(f"  check       - Pass with no bet\r\n")
                         self._stdout.write(f"  bet <amount>, b <amount> - Bet specified amount\r\n")
+                        self._stdout.write("  togglecards, tgc - Toggle card visibility\r\n")
                         self._stdout.write(f"\r\nEnter your action: ")
+                        await self._stdout.drain()
+                        continue
+                    
+                    # Handle toggle cards during gameplay
+                    if cmd in ('togglecards', 'tgc'):
+                        status_msg = self._ui.toggle_cards_visibility()
+                        
+                        # Re-render the game state with updated card visibility
+                        view = self._ui.render(game_state, player_hand=player.hand, action_history=action_history)
+                        self._stdout.write(f"\r{view}\r\n")
+                        self._stdout.write(f"{status_msg}\r\n")
+                        self._stdout.write(f"\r\n{Colors.BOLD}Enter your action:{Colors.RESET} ")
                         await self._stdout.drain()
                         continue
                     
@@ -1114,12 +1234,14 @@ class RoomSession:
                 if session._stdout.is_closing():
                     continue
                 
-                from poker.terminal_ui import TerminalUI
-                ui = TerminalUI(session_player.name)
+                # Use persistent UI instance for each session
+                if not hasattr(session, '_ui'):
+                    from poker.terminal_ui import TerminalUI
+                    session._ui = TerminalUI(session_player.name)
                 
                 # Show game state with waiting indicator
                 action_history = game_state.get('action_history', [])
-                view = ui.render(game_state, player_hand=session_player.hand, action_history=action_history)
+                view = session._ui.render(game_state, player_hand=session_player.hand, action_history=action_history)
                 session._stdout.write(view + "\r\n")
                 
                 # Show waiting message if it's not this player's turn
@@ -1238,7 +1360,7 @@ class RoomSession:
                 try:
                     from poker.game import Game
                     logging.debug("Creating game instance")
-                    game = Game(players, room.pm)  # Pass PlayerManager for logging
+                    game = Game(players)  # Pass only players as required
                     
                     logging.debug("Starting game round")
                     result = await game.start_round()
@@ -1255,9 +1377,12 @@ class RoomSession:
                             if session._stdout.is_closing():
                                 continue
                             
+                            # Use persistent UI instance that maintains card visibility state
+                            if not hasattr(session, '_ui'):
+                                from poker.terminal_ui import TerminalUI
+                                session._ui = TerminalUI(player.name)
+                            
                             # Create a final game state with all hands visible
-                            from poker.terminal_ui import TerminalUI
-                            ui = TerminalUI(player.name)
                             
                             # Create final state with all hands
                             final_state = {
@@ -1270,9 +1395,13 @@ class RoomSession:
                                 'hands': result.get('hands', {})  # Include hand evaluations
                             }
                             
-                            # Render final view with all hands shown
-                            final_view = ui.render(final_state, player_hand=player.hand, 
+                            # Render final view with all hands shown (override hide setting for final results)
+                            # Temporarily show cards for final results regardless of hide setting
+                            original_hidden_state = session._ui.cards_hidden
+                            session._ui.cards_hidden = False  # Force show for final results
+                            final_view = session._ui.render(final_state, player_hand=player.hand, 
                                                  action_history=game.action_history, show_all_hands=True)
+                            session._ui.cards_hidden = original_hidden_state  # Restore original state
                             session._stdout.write(final_view + "\r\n")
                                 
                             session._stdout.write(f"\r\n🏆 {Colors.BOLD}{Colors.YELLOW}=== ROUND RESULTS ==={Colors.RESET}\r\n")
