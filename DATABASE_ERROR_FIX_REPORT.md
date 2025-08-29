@@ -3,15 +3,18 @@
 ## Errors Found and Fixed
 
 ### 1. **CRITICAL: Schema Default Value Inconsistency** ✅ FIXED
+
 **Problem**: The database schema had `DEFAULT 1000` for wallet balance, but the application code was creating wallets with `$500`.
 
-**Location**: 
+**Location**:
+
 - Database schema: `poker_data.db` wallets table
 - Code: `poker/database.py` line 58
 
 **Impact**: This was likely the **ROOT CAUSE** of the "magical money" issue. When balance updates occurred, the system would sometimes use the schema default (1000) instead of the actual wallet creation amount (500), causing calculation errors.
 
 **Fix Applied**:
+
 ```sql
 -- OLD SCHEMA:
 balance INTEGER NOT NULL DEFAULT 1000
@@ -21,19 +24,25 @@ balance INTEGER NOT NULL DEFAULT 500
 ```
 
 ### 2. **Code-Database Consistency Verified** ✅ CONFIRMED
+
 **Verification**: All wallet creation methods now consistently create wallets with `$500`:
+
 - Direct database creation: `$500`
 - Wallet manager creation: `$500`
 - Schema default: `500`
 
 ### 3. **Transaction Integrity Validated** ✅ CONFIRMED
+
 **Verification**: Balance update logic is working correctly:
+
 - Balance changes are calculated accurately
 - Transaction logs match actual balance changes  
 - Audit functionality detects inconsistencies properly
 
 ### 4. **Race Condition Protection Active** ✅ CONFIRMED
+
 **Verification**: Concurrent wallet creation is handled properly:
+
 - `INSERT OR IGNORE` prevents duplicate wallet creation
 - Thread-safe database operations with proper locking
 - No duplicate wallet creation transactions
@@ -57,7 +66,8 @@ balance INTEGER NOT NULL DEFAULT 500
 ## Test Results
 
 All comprehensive tests passed:
-- ✅ Wallet creation consistency 
+
+- ✅ Wallet creation consistency
 - ✅ Balance update accuracy
 - ✅ Audit functionality
 - ✅ Edge case handling (zero, large, negative balances)
@@ -69,11 +79,12 @@ All comprehensive tests passed:
 The "magical money" issue was primarily caused by the schema inconsistency:
 
 1. **Initial Setup**: Database schema set default balance to `$1000`
-2. **Code Behavior**: Application creates wallets with `$500` 
+2. **Code Behavior**: Application creates wallets with `$500`
 3. **The Bug**: When updating balances, system sometimes fell back to schema default
 4. **Result**: Incorrect balance calculations created phantom money
 
 **Example of the bug in action**:
+
 ```
 Player wallet: $200 (actual)
 Bug triggers schema fallback: assumes old balance was $1000

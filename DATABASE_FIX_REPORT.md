@@ -3,10 +3,12 @@
 ## Issues Found and Fixed
 
 ### 1. **Critical Balance Inconsistency (FIXED)**
+
 **Location**: `poker/database.py` line 187-190  
 **Issue**: When updating wallet balance, if wallet didn't exist, it would use `old_balance = 1000` but new wallets are created with $500, causing incorrect transaction calculations.
 
-**Fix**: 
+**Fix**:
+
 ```python
 # OLD CODE (BUGGY):
 if not row:
@@ -20,25 +22,30 @@ if not row:
 ```
 
 ### 2. **Race Condition in Wallet Creation (FIXED)**
+
 **Location**: `poker/database.py` get_wallet() method  
 **Issue**: Multiple concurrent connections could create duplicate wallets or cause primary key violations.
 
 **Fix**: Used `INSERT OR IGNORE` to prevent duplicate wallet creation and added proper checking for successful insertion.
 
 ### 3. **Cache/Database Synchronization Issues (IMPROVED)**
+
 **Location**: `poker/wallet.py`  
 **Issue**: In-memory wallet cache could become out of sync with database, leading to phantom money.
 
 **Fixes Applied**:
+
 - Added periodic cache validation with random integrity checks
 - Enhanced save function with better logging and large change detection
 - Added safeguards against suspicious large balances ($100K+ cap on chips)
 - Improved error handling with full stack traces
 
 ### 4. **Missing Transaction Audit Trail (ADDED)**
+
 **Issue**: No way to trace how money was appearing/disappearing.
 
 **New Features Added**:
+
 - `wallet check` admin command for database integrity checking
 - `wallet audit <player>` admin command for detailed transaction analysis  
 - Enhanced logging for all wallet operations
@@ -57,6 +64,7 @@ The primary cause was **Issue #1** - the balance calculation bug. Here's how it 
 6. Transaction recorded incorrectly → money appears from nowhere
 
 **Example scenario**:
+
 - Wallet actually has $200
 - Bug thinks old balance was $1000  
 - System records: "$200 - $1000 = -$800 change"
@@ -76,6 +84,7 @@ The primary cause was **Issue #1** - the balance calculation bug. Here's how it 
 ## Testing Results
 
 All integrity tests pass:
+
 - ✅ Concurrent wallet creation handled properly
 - ✅ Cache/database synchronization working
 - ✅ Large balance detection and capping functional
