@@ -226,7 +226,7 @@ PLAY FAIRLY AGGRESSIVELY (but within reason please)! You should raise to build p
 - Drawing hands
 - Bluffs to steal pots
 
-Be bold and raise often! Don't just call - RAISE to win (not TOO aggressive though)!
+Be bold and raise! Don't just call - RAISE to win (don't be TOO aggressive though)!
 
 Respond with JSON: {{"action": "fold/call/raise", "amount": number}}
 """
