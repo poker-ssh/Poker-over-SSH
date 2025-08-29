@@ -24,7 +24,20 @@ class WalletManager:
         """Get wallet information for a player (from cache or database)."""
         # Check cache first
         if player_name in self._wallet_cache:
-            return self._wallet_cache[player_name].copy()
+            cached_wallet = self._wallet_cache[player_name].copy()
+            # Validate cache integrity periodically (every ~10th call)
+            import random
+            if random.randint(1, 10) == 1:
+                try:
+                    db_wallet = self.db.get_wallet(player_name)
+                    # If there's a significant discrepancy in balance, log it and refresh cache
+                    if abs(cached_wallet['balance'] - db_wallet['balance']) > cached_wallet.get('session_winnings', 0):
+                        logging.warning(f"Cache/DB discrepancy for {player_name}: cache=${cached_wallet['balance']}, db=${db_wallet['balance']}")
+                        self._wallet_cache[player_name] = db_wallet.copy()
+                        return db_wallet
+                except Exception as e:
+                    logging.error(f"Error validating cache for {player_name}: {e}")
+            return cached_wallet
         
         # Load from database and cache it
         wallet = self.db.get_wallet(player_name)
@@ -57,12 +70,20 @@ class WalletManager:
             old_balance = db_wallet['balance']
             new_balance = wallet['balance']
             
+            # Log the save attempt for debugging
+            logging.info(f"Saving wallet for {player_name}: ${old_balance} -> ${new_balance}")
+            
             # Only save if there are changes
             if old_balance == new_balance:
                 logging.debug(f"No balance changes for {player_name}, skipping save")
                 # Still update cache to mark as "saved" by removing unsaved indicator
                 self._wallet_cache[player_name] = db_wallet.copy()
                 return True
+            
+            # Validate the change is reasonable (prevent massive jumps that might indicate corruption)
+            change = new_balance - old_balance
+            if abs(change) > 50000:  # Alert on changes larger than $50,000
+                logging.warning(f"LARGE BALANCE CHANGE detected for {player_name}: ${change:+}. Old: ${old_balance}, New: ${new_balance}")
             
             # Update database with cached values
             self.db.update_wallet_balance(
@@ -89,6 +110,8 @@ class WalletManager:
             
         except Exception as e:
             logging.error(f"Failed to save wallet for {player_name}: {e}")
+            import traceback
+            logging.error(traceback.format_exc())
             return False
     
     def save_all_wallets(self) -> int:
@@ -114,6 +137,12 @@ class WalletManager:
             logging.debug(f"Player {player_name} broke, adding minimum starting funds")
             self._update_cache(player_name, balance=500)
             chips = 500
+        
+        # Prevent excessive chip amounts that might indicate corruption
+        if chips > 100000:  # Alert on amounts larger than $100,000
+            logging.warning(f"SUSPICIOUS CHIP AMOUNT for {player_name}: ${chips}. Capping at $100,000")
+            chips = 100000
+            self._update_cache(player_name, balance=100000)
         
         logging.debug(f"Player {player_name} bringing all ${chips} into game")
         
