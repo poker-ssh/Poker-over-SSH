@@ -806,10 +806,63 @@ class RoomSession:
                     self._stdout.write(f"✅ Saved {saved_count} wallets to database\r\n\r\n❯ ")
                 else:
                     self._stdout.write(f"❌ Admin privileges required for saveall command\r\n\r\n❯ ")
+                    
+            elif subcmd == "check":
+                # Admin command to check database integrity
+                if self._username in ['admin', 'root']:  # Basic admin check
+                    from poker.database import get_database
+                    db = get_database()
+                    issues = db.check_database_integrity()
+                    
+                    if not issues:
+                        self._stdout.write(f"✅ Database integrity check passed - no issues found\r\n\r\n❯ ")
+                    else:
+                        self._stdout.write(f"⚠️  Database integrity check found {len(issues)} issue(s):\r\n")
+                        for issue in issues[:10]:  # Limit to first 10 issues
+                            self._stdout.write(f"  • {issue}\r\n")
+                        if len(issues) > 10:
+                            self._stdout.write(f"  ... and {len(issues) - 10} more issues\r\n")
+                        self._stdout.write("\r\n❯ ")
+                else:
+                    self._stdout.write(f"❌ Admin privileges required for check command\r\n\r\n❯ ")
+                    
+            elif subcmd == "audit":
+                # Admin command to audit specific player's transactions
+                if self._username in ['admin', 'root']:  # Basic admin check
+                    if len(parts) < 3:
+                        self._stdout.write(f"❌ Usage: wallet audit <player_name>\r\n\r\n❯ ")
+                    else:
+                        target_player = parts[2]
+                        from poker.database import get_database
+                        db = get_database()
+                        audit_result = db.audit_player_transactions(target_player)
+                        
+                        if "error" in audit_result:
+                            self._stdout.write(f"❌ {audit_result['error']}\r\n\r\n❯ ")
+                        else:
+                            self._stdout.write(f"🔍 Transaction Audit for {audit_result['player_name']}:\r\n")
+                            self._stdout.write(f"  Current Balance: ${audit_result['current_balance']}\r\n")
+                            self._stdout.write(f"  Transaction Count: {audit_result['transaction_count']}\r\n")
+                            self._stdout.write(f"  Total Credits: ${audit_result['summary']['total_credits']}\r\n")
+                            self._stdout.write(f"  Total Debits: ${audit_result['summary']['total_debits']}\r\n")
+                            self._stdout.write(f"  Net Change: ${audit_result['summary']['net_change']:+}\r\n")
+                            self._stdout.write(f"  Calculated Balance: ${audit_result['summary']['calculated_balance']}\r\n")
+                            
+                            if audit_result['issues']:
+                                self._stdout.write(f"\r\n⚠️  Found {len(audit_result['issues'])} issue(s):\r\n")
+                                for issue in audit_result['issues'][:5]:  # Limit output
+                                    self._stdout.write(f"  • {issue}\r\n")
+                                if len(audit_result['issues']) > 5:
+                                    self._stdout.write(f"  ... and {len(audit_result['issues']) - 5} more issues\r\n")
+                            else:
+                                self._stdout.write(f"\r\n✅ No issues found in transaction history\r\n")
+                            self._stdout.write("\r\n❯ ")
+                else:
+                    self._stdout.write(f"❌ Admin privileges required for audit command\r\n\r\n❯ ")
                         
             else:
                 self._stdout.write(f"❌ Unknown wallet command: {subcmd}\r\n")
-                self._stdout.write("💡 Available: history, actions, leaderboard, add, save, saveall\r\n\r\n❯ ")
+                self._stdout.write("💡 Available: history, actions, leaderboard, add, save, saveall, check, audit\r\n\r\n❯ ")
             
             await self._stdout.drain()
             
