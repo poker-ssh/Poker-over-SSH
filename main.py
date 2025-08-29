@@ -7,6 +7,7 @@ import argparse
 import asyncio
 import logging
 from poker.ssh_server import SSHServer
+from poker.healthcheck import start_healthcheck_in_background
 
 
 async def main(host: str, port: int):
@@ -35,6 +36,13 @@ async def main(host: str, port: int):
         print("💡 Continuing without persistent wallet system")
     
     server = SSHServer(host=host, port=port)
+    # Start healthcheck service in the bg (separate HTTP port)
+    try:
+        asyncio.create_task(start_healthcheck_in_background())
+    except Exception:
+        # best-effort, continue if healthcheck failed to start
+        pass
+
     await server.serve_forever()
 
 
