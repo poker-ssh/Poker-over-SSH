@@ -221,7 +221,7 @@ Your options:
 
 PLAY FAIRLY AGGRESSIVELY (but within reason please)! You should raise to build pots and put pressure on opponents. Consider raising with:
 - Any pair
-- Any ace or king
+- Any ace
 - Suited connectors
 - Drawing hands
 - Bluffs to steal pots
