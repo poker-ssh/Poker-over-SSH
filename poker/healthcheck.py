@@ -123,8 +123,6 @@ class HealthcheckService:
             self._db = get_database()
         except Exception:
             self._db = None
-        # CORS origin config (default allow all)
-        self.cors_origin = env.get('HEALTHCHECK_CORS_ORIGIN', '*')
 
     async def _background_probe(self):
         while True:
@@ -229,34 +227,7 @@ class HealthcheckService:
         loop = asyncio.get_event_loop()
         self._task = loop.create_task(self._background_probe())
 
-        # CORS middleware
-        @web.middleware
-        async def cors_middleware(request, handler):
-            # Handle preflight
-            if request.method == 'OPTIONS':
-                resp = web.Response(text='')
-            else:
-                resp = await handler(request)
-
-            origin = request.headers.get('Origin')
-            allowed = self.cors_origin
-            # If allowed is '*' allow any; otherwise echo the Origin if it matches allowed
-            if allowed == '*':
-                resp.headers['Access-Control-Allow-Origin'] = '*'
-            else:
-                # If allowed contains the request origin or is exactly the origin, set it; otherwise leave unset
-                if origin and (allowed == origin or origin == allowed):
-                    resp.headers['Access-Control-Allow-Origin'] = origin
-
-            resp.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS'
-            resp.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
-            # Allow credentials only when not wildcard
-            if resp.headers.get('Access-Control-Allow-Origin') and resp.headers['Access-Control-Allow-Origin'] != '*':
-                resp.headers['Access-Control-Allow-Credentials'] = 'true'
-
-            return resp
-
-        app = web.Application(middlewares=[cors_middleware])
+        app = web.Application()
         app.router.add_get('/health', self.status_handler)
         app.router.add_get('/history', self.history_handler)
         runner = web.AppRunner(app)
