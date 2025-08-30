@@ -8,6 +8,7 @@ Uses SQLite for simplicity and reliability.
 import sqlite3
 import logging
 import time
+import json
 from typing import Optional, List, Dict, Any, Tuple
 from pathlib import Path
 from contextlib import contextmanager
@@ -125,6 +126,17 @@ class DatabaseManager:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_transactions_player ON transactions (player_name)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_wallets_activity ON wallets (last_activity)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_daily_bonuses_player ON daily_bonuses (player_name)")
+            # Healthcheck history table - stores recent probe results for health UI
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS health_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    probe TEXT,
+                    created_at REAL NOT NULL
+                )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_health_ts ON health_history (ts)")
             
         logging.info(f"Database initialized at {self.db_path}")
     
@@ -466,6 +478,33 @@ class DatabaseManager:
                 audit_result["issues"].append(f"Final balance mismatch: Calculated ${expected_balance}, Wallet shows ${wallet['balance']}")
             
             return audit_result
+
+        # -------------------- Healthcheck history helpers --------------------
+        def log_health_entry(self, ts: int, status: str, probe: Dict[str, Any]) -> int:
+            """Insert a healthcheck history entry. Probe dict stored as JSON."""
+            with self.get_cursor() as cursor:
+                cursor.execute(
+                    "INSERT INTO health_history (ts, status, probe, created_at) VALUES (?, ?, ?, ?)",
+                    (ts, status, json.dumps(probe), time.time())
+                )
+                return cursor.lastrowid or 0
+
+        def get_health_history(self, limit: int = 100) -> List[Dict[str, Any]]:
+            """Retrieve recent health history entries, most recent first."""
+            with self.get_cursor() as cursor:
+                cursor.execute(
+                    "SELECT ts, status, probe, created_at FROM health_history ORDER BY ts DESC LIMIT ?",
+                    (limit,)
+                )
+                rows = cursor.fetchall()
+                result = []
+                for row in rows:
+                    try:
+                        probe = json.loads(row['probe']) if row['probe'] else None
+                    except Exception:
+                        probe = None
+                    result.append({'ts': row['ts'], 'status': row['status'], 'probe': probe, 'created_at': row['created_at']})
+                return result
 
 
     def can_claim_bonus(self, player_name: str) -> Tuple[bool, str]:
