@@ -123,8 +123,8 @@ class HealthcheckService:
             self._db = get_database()
         except Exception:
             self._db = None
-    # CORS origin config (default allow all)
-    self.cors_origin = env.get('HEALTHCHECK_CORS_ORIGIN', '*')
+        # CORS origin config (default allow all)
+        self.cors_origin = env.get('HEALTHCHECK_CORS_ORIGIN', '*')
 
     async def _background_probe(self):
         while True:
