@@ -1,0 +1,41 @@
+name: Trigger PoS-Docker Publish
+
+# Run when the update-version workflow file is changed (committed/updated)
+on:
+  push:
+    paths:
+      - .github/workflows/update-version.yml
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  trigger-publish-docker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger publish workflow in poker-ssh/PoS-Docker using gh
+        env:
+          TARGET_REPO: poker-ssh/PoS-Docker
+          WORKFLOW_FILE: publish-docker-image.yml
+          REF: main
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${GITHUB_TOKEN:-}" ]; then
+            echo "ERROR: GITHUB_TOKEN is not available"
+            exit 1
+          fi
+
+          echo "Authenticating gh with GITHUB_TOKEN..."
+          echo "${GITHUB_TOKEN}" | gh auth login --with-token
+
+          echo "Running workflow '${WORKFLOW_FILE}' in ${TARGET_REPO} (ref=${REF}) using 'gh workflow run'..."
+
+          # Trigger the workflow by filename in the target repository
+          gh workflow run "${WORKFLOW_FILE}" --repo "${TARGET_REPO}" --ref "${REF}" || {
+            echo "gh workflow run failed. The GITHUB_TOKEN may not have cross-repo permissions or the workflow filename is incorrect.";
+            exit 1;
+          }
+
+          echo "Workflow run request submitted. Use 'gh run list --repo ${TARGET_REPO}' to view runs."
