@@ -54,12 +54,25 @@ class RoomSession:
             self._stdout.write(motd + "\r\n")
             if username:
                 self._stdout.write(f"🎭 Logged in as: {Colors.CYAN}{username}{Colors.RESET}\r\n")
-                self._stdout.write(f"🏠 Current room: {Colors.GREEN}Default Lobby{Colors.RESET}\r\n")
                 self._stdout.write(f"💡 Type '{Colors.GREEN}help{Colors.RESET}' for commands or '{Colors.GREEN}seat{Colors.RESET}' to join a game.\r\n")
             else:
-                self._stdout.write(f"🏠 Current room: {Colors.GREEN}Default Lobby{Colors.RESET}\r\n")
                 self._stdout.write(f"⚠️  {Colors.YELLOW}No SSH username detected. To play, reconnect with: ssh <username>@{server_info['ssh_connection_string']}{Colors.RESET}\r\n")
                 self._stdout.write(f"💡 Type '{Colors.GREEN}help{Colors.RESET}' for commands.\r\n")
+            # Rounded Unicode box; legal disclaimer
+            self._stdout.write(
+                f"{Colors.RED}╭───────────────────────────────────────────────────────────────────╮\r\n"
+                f"│{Colors.BOLD}{Colors.CYAN} Poker over SSH IS PROVIDED 'AS-IS', with ABSOLUTELY NO WARRANTY,  {Colors.RESET}{Colors.RED}│\r\n"
+                f"│{Colors.BOLD}{Colors.CYAN} to the extent permitted by applicable law.                        {Colors.RESET}{Colors.RED}│\r\n"
+                f"╰───────────────────────────────────────────────────────────────────╯{Colors.RESET}\r\n\r\n"
+            )
+            self._stdout.write(f"{Colors.DIM}Copyleft {Colors.BOLD}(LGPL-2.1){Colors.RESET}{Colors.DIM}, Poker over SSH and contributors{Colors.RESET}\r\n")
+            # Point users to the official LGPL-2.1 text
+            self._stdout.write(
+                f"{Colors.DIM}By continuing to interact with this game server, you agree to the terms of the {Colors.BOLD}LGPL-2.1{Colors.RESET}{Colors.DIM} license "
+                f"({Colors.CYAN}https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html{Colors.RESET}) or see the project's {Colors.BOLD}LICENSE{Colors.RESET}{Colors.DIM} file.{Colors.RESET}\r\n\r\n"
+            )
+            self._stdout.write(f"{Colors.BOLD}{Colors.GREEN}GitHub Repository:{Colors.RESET} {Colors.CYAN}https://github.com/poker-ssh/Poker-over-SSH{Colors.RESET}\r\n")
+            self._stdout.write(f"{Colors.BOLD}{Colors.YELLOW}Please file bug reports:{Colors.RESET} {Colors.CYAN}https://github.com/poker-ssh/Poker-over-SSH/issues{Colors.RESET}\r\n")
             self._stdout.write("❯ ")
         except Exception:
             pass
