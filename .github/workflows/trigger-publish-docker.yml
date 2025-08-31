@@ -27,12 +27,38 @@ jobs:
             exit 1
           fi
 
-          echo "Running workflow '${WORKFLOW_FILE}' in ${TARGET_REPO} (ref=${REF}) using 'gh workflow run'..."
+            echo "Installing GitHub CLI (gh)..."
+            sudo apt-get update -y
+            sudo apt-get install -y gh
 
-          # Trigger the workflow by filename in the target repository
-          gh workflow run "${WORKFLOW_FILE}" --repo "${TARGET_REPO}" --ref "${REF}" || {
-            echo "gh workflow run failed. The GITHUB_TOKEN may not have cross-repo permissions or the workflow filename is incorrect.";
-            exit 1;
-          }
+            echo "Authenticating gh with GITHUB_TOKEN..."
+            echo "${GITHUB_TOKEN}" | gh auth login --with-token
 
-          echo "Workflow run request submitted. Use 'gh run list --repo ${TARGET_REPO}' to view runs."
+            # Determine current repo and latest release
+            CURRENT_REPO="${GITHUB_REPOSITORY:-poker-ssh/Poker-over-SSH}"
+            echo "Getting latest release tag for ${CURRENT_REPO}..."
+            set +e
+            LATEST_TAG=$(gh release view --repo "${CURRENT_REPO}" --latest --json tagName -q .tagName 2>/dev/null)
+            rc=$?
+            set -e
+
+            if [ $rc -ne 0 ] || [ -z "${LATEST_TAG:-}" ]; then
+              echo "No release found for ${CURRENT_REPO} or gh failed to fetch it."
+              exit 1
+            fi
+
+            echo "Latest release tag: ${LATEST_TAG}"
+
+            # Normalize tag (strip leading 'v' if present)
+            RELEASE_TAG_NO_V="${LATEST_TAG#v}"
+            echo "Normalized release tag (no leading v): ${RELEASE_TAG_NO_V}"
+
+            echo "Running workflow '${WORKFLOW_FILE}' in ${TARGET_REPO} (ref=${REF}) and passing input release_tag=${RELEASE_TAG_NO_V}..."
+
+            # Trigger the workflow by filename in the target repository and pass the release tag as an input named 'release_tag'
+            gh workflow run "${WORKFLOW_FILE}" --repo "${TARGET_REPO}" --ref "${REF}" -f release_tag="${RELEASE_TAG_NO_V}" || {
+              echo "gh workflow run failed. The GITHUB_TOKEN may not have cross-repo permissions or the workflow filename is incorrect.";
+              exit 1;
+            }
+
+            echo "Workflow run request submitted. Use 'gh run list --repo ${TARGET_REPO}' to view runs."
