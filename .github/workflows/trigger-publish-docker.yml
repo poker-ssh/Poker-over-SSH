@@ -27,9 +27,6 @@ jobs:
             exit 1
           fi
 
-          echo "Authenticating gh with GITHUB_TOKEN..."
-          echo "${GITHUB_TOKEN}" | gh auth login --with-token
-
           echo "Running workflow '${WORKFLOW_FILE}' in ${TARGET_REPO} (ref=${REF}) using 'gh workflow run'..."
 
           # Trigger the workflow by filename in the target repository
