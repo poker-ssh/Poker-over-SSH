@@ -8,6 +8,7 @@ Uses SQLite for simplicity and reliability.
 import sqlite3
 import logging
 import time
+import json
 from typing import Optional, List, Dict, Any, Tuple
 from pathlib import Path
 from contextlib import contextmanager
@@ -57,7 +58,7 @@ class DatabaseManager:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS wallets (
                     player_name TEXT PRIMARY KEY,
-                    balance INTEGER NOT NULL DEFAULT 1000,
+                    balance INTEGER NOT NULL DEFAULT 500,
                     total_winnings INTEGER NOT NULL DEFAULT 0,
                     total_losses INTEGER NOT NULL DEFAULT 0,
                     games_played INTEGER NOT NULL DEFAULT 0,
@@ -125,6 +126,17 @@ class DatabaseManager:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_transactions_player ON transactions (player_name)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_wallets_activity ON wallets (last_activity)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_daily_bonuses_player ON daily_bonuses (player_name)")
+            # Healthcheck history table - stores recent probe results for health UI
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS health_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    probe TEXT,
+                    created_at REAL NOT NULL
+                )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_health_ts ON health_history (ts)")
             
         logging.info(f"Database initialized at {self.db_path}")
     
@@ -148,30 +160,43 @@ class DatabaseManager:
                     'created_at': row['created_at']
                 }
             else:
-                # Create new wallet with default balance
+                # Create new wallet with default balance (use INSERT OR IGNORE to prevent duplicates)
                 now = time.time()
                 cursor.execute("""
-                    INSERT INTO wallets 
+                    INSERT OR IGNORE INTO wallets 
                     (player_name, balance, total_winnings, total_losses, games_played, last_activity, created_at)
                     VALUES (?, 500, 0, 0, 0, ?, ?)
                 """, (player_name, now, now))
                 
-                # Log transaction separately after wallet exists (commit the wallet first)
-                cursor.connection.commit()
+                # Check if we actually inserted (in case another thread beat us to it)
+                if cursor.rowcount > 0:
+                    # We created the wallet, log transaction
+                    cursor.connection.commit()
+                    
+                    self.log_transaction(
+                        player_name, 'WALLET_CREATED', 500, 0, 500,
+                        'New wallet created with starting balance'
+                    )
+                    logging.info(f"Created new wallet for {player_name} with $500 starting balance")
+                else:
+                    # Another thread created it, fetch the existing one
+                    logging.debug(f"Wallet already exists for {player_name}, fetching existing")
                 
-                self.log_transaction(
-                    player_name, 'WALLET_CREATED', 500, 0, 500,
-                    'New wallet created with starting balance'
+                # Return the wallet (either newly created or existing)
+                cursor.execute(
+                    "SELECT * FROM wallets WHERE player_name = ?",
+                    (player_name,)
                 )
+                row = cursor.fetchone()
                 
                 return {
-                    'player_name': player_name,
-                    'balance': 500,
-                    'total_winnings': 0,
-                    'total_losses': 0,
-                    'games_played': 0,
-                    'last_activity': now,
-                    'created_at': now
+                    'player_name': row['player_name'],
+                    'balance': row['balance'],
+                    'total_winnings': row['total_winnings'],
+                    'total_losses': row['total_losses'],
+                    'games_played': row['games_played'],
+                    'last_activity': row['last_activity'],
+                    'created_at': row['created_at']
                 }
     
     def update_wallet_balance(self, player_name: str, new_balance: int, 
@@ -187,9 +212,9 @@ class DatabaseManager:
             row = cursor.fetchone()
             
             if not row:
-                # Create wallet if it doesn't exist
-                self.get_wallet(player_name)
-                old_balance = 1000
+                # Create wallet if it doesn't exist first
+                wallet = self.get_wallet(player_name)
+                old_balance = wallet['balance']  # Use the actual balance from the newly created wallet (500)
             else:
                 old_balance = row['balance']
             
@@ -342,7 +367,144 @@ class DatabaseManager:
             cursor.execute("SELECT SUM(balance) as total FROM wallets")
             stats['total_balance'] = cursor.fetchone()['total'] or 0
             
+            # Check for suspicious large balances
+            cursor.execute("SELECT COUNT(*) as count FROM wallets WHERE balance > 50000")
+            stats['suspicious_balances'] = cursor.fetchone()['count']
+            
             return stats
+
+    def check_database_integrity(self) -> List[str]:
+        """Check database for potential integrity issues."""
+        issues = []
+        
+        with self.get_cursor() as cursor:
+            # Check for wallets with excessive balances
+            cursor.execute("SELECT player_name, balance FROM wallets WHERE balance > 100000")
+            large_balances = cursor.fetchall()
+            for row in large_balances:
+                issues.append(f"Suspicious large balance: {row['player_name']} has ${row['balance']}")
+            
+            # Check for negative balances
+            cursor.execute("SELECT player_name, balance FROM wallets WHERE balance < 0")
+            negative_balances = cursor.fetchall()
+            for row in negative_balances:
+                issues.append(f"Negative balance: {row['player_name']} has ${row['balance']}")
+            
+            # Check for transaction inconsistencies
+            cursor.execute("""
+                SELECT player_name, COUNT(*) as count, 
+                       SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) as credits,
+                       SUM(CASE WHEN amount < 0 THEN amount ELSE 0 END) as debits
+                FROM transactions 
+                WHERE transaction_type != 'WALLET_CREATED'
+                GROUP BY player_name
+                HAVING COUNT(*) > 100
+            """)
+            heavy_activity = cursor.fetchall()
+            for row in heavy_activity:
+                issues.append(f"Heavy transaction activity: {row['player_name']} has {row['count']} transactions")
+            
+            # Check for players with huge win/loss streaks
+            cursor.execute("""
+                SELECT player_name, total_winnings, total_losses, balance,
+                       (total_winnings - total_losses) as net
+                FROM wallets 
+                WHERE total_winnings > 50000 OR total_losses > 50000 OR ABS(total_winnings - total_losses) > 75000
+            """)
+            extreme_stats = cursor.fetchall()
+            for row in extreme_stats:
+                issues.append(f"Extreme stats: {row['player_name']} - Winnings: ${row['total_winnings']}, Losses: ${row['total_losses']}, Net: ${row['net']}")
+        
+        return issues
+
+    def audit_player_transactions(self, player_name: str) -> Dict[str, Any]:
+        """Audit a player's transactions for inconsistencies."""
+        with self.get_cursor() as cursor:
+            # Get wallet info
+            cursor.execute("SELECT * FROM wallets WHERE player_name = ?", (player_name,))
+            wallet = cursor.fetchone()
+            if not wallet:
+                return {"error": "Player not found"}
+            
+            # Get all transactions
+            cursor.execute("""
+                SELECT * FROM transactions 
+                WHERE player_name = ? 
+                ORDER BY timestamp ASC
+            """, (player_name,))
+            transactions = cursor.fetchall()
+            
+            audit_result = {
+                "player_name": player_name,
+                "current_balance": wallet['balance'],
+                "transaction_count": len(transactions),
+                "issues": [],
+                "summary": {
+                    "total_credits": 0,
+                    "total_debits": 0,
+                    "net_change": 0,
+                    "calculated_balance": 500  # Starting balance
+                }
+            }
+            
+            expected_balance = 500  # Starting balance for new wallets
+            
+            for i, tx in enumerate(transactions):
+                # Check if balance_after matches calculated balance
+                if tx['transaction_type'] == 'WALLET_CREATED':
+                    expected_balance = tx['balance_after']
+                else:
+                    expected_balance += tx['amount']
+                
+                if tx['balance_after'] != expected_balance:
+                    audit_result["issues"].append(f"Transaction {i+1}: Expected balance ${expected_balance}, got ${tx['balance_after']}")
+                
+                # Check if amount matches balance difference
+                actual_change = tx['balance_after'] - tx['balance_before']
+                if actual_change != tx['amount']:
+                    audit_result["issues"].append(f"Transaction {i+1}: Amount ${tx['amount']} doesn't match balance change ${actual_change}")
+                
+                # Accumulate totals
+                if tx['amount'] > 0:
+                    audit_result["summary"]["total_credits"] += tx['amount']
+                else:
+                    audit_result["summary"]["total_debits"] += abs(tx['amount'])
+            
+            audit_result["summary"]["net_change"] = audit_result["summary"]["total_credits"] - audit_result["summary"]["total_debits"]
+            audit_result["summary"]["calculated_balance"] = expected_balance
+            
+            # Check if calculated balance matches current wallet balance
+            if expected_balance != wallet['balance']:
+                audit_result["issues"].append(f"Final balance mismatch: Calculated ${expected_balance}, Wallet shows ${wallet['balance']}")
+            
+            return audit_result
+
+        # -------------------- Healthcheck history helpers --------------------
+        def log_health_entry(self, ts: int, status: str, probe: Dict[str, Any]) -> int:
+            """Insert a healthcheck history entry. Probe dict stored as JSON."""
+            with self.get_cursor() as cursor:
+                cursor.execute(
+                    "INSERT INTO health_history (ts, status, probe, created_at) VALUES (?, ?, ?, ?)",
+                    (ts, status, json.dumps(probe), time.time())
+                )
+                return cursor.lastrowid or 0
+
+        def get_health_history(self, limit: int = 100) -> List[Dict[str, Any]]:
+            """Retrieve recent health history entries, most recent first."""
+            with self.get_cursor() as cursor:
+                cursor.execute(
+                    "SELECT ts, status, probe, created_at FROM health_history ORDER BY ts DESC LIMIT ?",
+                    (limit,)
+                )
+                rows = cursor.fetchall()
+                result = []
+                for row in rows:
+                    try:
+                        probe = json.loads(row['probe']) if row['probe'] else None
+                    except Exception:
+                        probe = None
+                    result.append({'ts': row['ts'], 'status': row['status'], 'probe': probe, 'created_at': row['created_at']})
+                return result
 
 
     def can_claim_bonus(self, player_name: str) -> Tuple[bool, str]:

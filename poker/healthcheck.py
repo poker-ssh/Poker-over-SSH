@@ -8,6 +8,7 @@ import os
 import asyncio
 import logging
 import time
+import json
 from typing import Dict, Any
 
 try:
@@ -16,6 +17,7 @@ except Exception:  # pragma: no cover
     asyncssh = None
 
 from aiohttp import web
+from .database import get_database
 
 
 def load_env():
@@ -102,8 +104,25 @@ class HealthcheckService:
             'last_probe': None,
             'probe': None,
         }
+        # History configuration - store recent probe results for UI/metrics
+        # HISTORY_SIZE controls how many entries to keep (default ~ 1440 = 24h at 1m interval)
+        self.history_size = int(env.get('HEALTHCHECK_HISTORY_SIZE', '1440'))
+        # Optional file to persist history across restarts
+        self.history_file = env.get('HEALTHCHECK_HISTORY_FILE')
+        self.history: list[Dict[str, Any]] = []
+        if self.history_file:
+            try:
+                with open(self.history_file, 'r') as hf:
+                    self.history = json.load(hf) or []
+            except Exception:
+                logging.exception('Failed to load history file, starting with empty history')
         self._probe = SSHProbe(self.server_host, self.server_port)
         self._task: asyncio.Task | None = None
+        # Try to get database manager if initialized
+        try:
+            self._db = get_database()
+        except Exception:
+            self._db = None
 
     async def _background_probe(self):
         while True:
@@ -122,14 +141,86 @@ class HealthcheckService:
                     self._latest['status'] = 'warn'
                 else:
                     self._latest['status'] = 'fail'
+
+                # Record history via DB if available, else fall back to in-memory/file
+                if self._db and hasattr(self._db, 'log_health_entry'):
+                    try:
+                        getattr(self._db, 'log_health_entry')(self._latest['last_probe'], self._latest['status'], res)
+                    except Exception:
+                        logging.exception('Failed to write health entry to database')
+                else:
+                    entry = {
+                        'ts': self._latest['last_probe'],
+                        'status': self._latest['status'],
+                        'probe': res,
+                    }
+                    self.history.append(entry)
+                    # trim history
+                    if len(self.history) > self.history_size:
+                        self.history = self.history[-self.history_size:]
+                    # persist if configured
+                    if self.history_file:
+                        try:
+                            with open(self.history_file, 'w') as hf:
+                                json.dump(self.history, hf)
+                        except Exception:
+                            logging.exception('Failed to persist history to file')
+
             except Exception as e:
                 logging.exception('Healthcheck probe failed')
                 self._latest['status'] = 'error'
                 self._latest['probe'] = {'error': str(e)}
+
+                # record failure in history as well
+                if self._db and hasattr(self._db, 'log_health_entry'):
+                    try:
+                        getattr(self._db, 'log_health_entry')(int(time.time()), 'error', {'error': str(e)})
+                    except Exception:
+                        logging.exception('Failed to write error health entry to database')
+                else:
+                    entry = {
+                        'ts': int(time.time()),
+                        'status': 'error',
+                        'probe': {'error': str(e)},
+                    }
+                    self.history.append(entry)
+                    if len(self.history) > self.history_size:
+                        self.history = self.history[-self.history_size:]
+                    if self.history_file:
+                        try:
+                            with open(self.history_file, 'w') as hf:
+                                json.dump(self.history, hf)
+                        except Exception:
+                            logging.exception('Failed to persist history to file')
+
             await asyncio.sleep(self.interval)
 
     async def status_handler(self, request):
         return web.json_response(self._latest)
+
+    async def history_handler(self, request):
+        """Return recent probe history. Optional query param `limit` to cap results."""
+        try:
+            limit = int(request.query.get('limit', '0'))
+        except Exception:
+            limit = 0
+        # If DB is available, pull from DB; otherwise use in-memory history
+        if self._db and hasattr(self._db, 'get_health_history'):
+            try:
+                if limit <= 0:
+                    limit = self.history_size
+                data = getattr(self._db, 'get_health_history')(limit)
+                return web.json_response({'history': data, 'count': len(data)})
+            except Exception:
+                logging.exception('Failed to fetch history from database')
+                # fall through to in-memory
+
+        if limit <= 0:
+            data = list(self.history)
+        else:
+            data = list(self.history[-limit:])
+
+        return web.json_response({'history': data, 'count': len(data)})
 
     async def start(self):
         # start background probe
@@ -138,6 +229,7 @@ class HealthcheckService:
 
         app = web.Application()
         app.router.add_get('/health', self.status_handler)
+        app.router.add_get('/history', self.history_handler)
         runner = web.AppRunner(app)
         await runner.setup()
         site = web.TCPSite(runner, host=self.host, port=self.port)

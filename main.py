@@ -11,15 +11,7 @@ from poker.healthcheck import start_healthcheck_in_background
 
 
 async def main(host: str, port: int):
-    print("🏠 Starting Poker-over-SSH with Room System")
-    print("=" * 50)
-    print("✨ Features:")
-    print("  • Create private rooms with custom codes")
-    print("  • Room codes only visible to creators and members")
-    print("  • Room expiry system (30 minutes, extendable)")
-    print("  • Room extension and management")
-    print("  • Persistent wallet system with database")
-    print("  • All actions logged to database")
+    print("🏠 Starting Poker-over-SSH server")
     print("=" * 50)
     
     # Initialize database

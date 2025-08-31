@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import random
+import logging
 from typing import Any, Dict, Optional, Callable, Awaitable
 
 try:
@@ -139,7 +140,7 @@ class PokerAI:
             content = response.choices[0].message.content
             
             # DEBUG: Log the raw AI response
-            print(f"🤖 DEBUG [{self.player.name}] Raw AI response: {repr(content)}")
+            logging.debug(f"🤖 DEBUG [{self.player.name}] Raw AI response: {repr(content)}")
             
             if not content:
                 print("AI returned empty response, using fallback")
@@ -161,7 +162,7 @@ class PokerAI:
                 
                 # Validate and sanitize the decision
                 validated_decision = self._validate_decision(decision, game_state)
-                print(f"🤖 DEBUG [{self.player.name}] Final decision: {validated_decision}")
+                logging.debug(f"🤖 DEBUG [{self.player.name}] Final decision: {validated_decision}")
                 return validated_decision
                 
             except (json.JSONDecodeError, KeyError):
@@ -220,12 +221,12 @@ Your options:
 
 PLAY FAIRLY AGGRESSIVELY (but within reason please)! You should raise to build pots and put pressure on opponents. Consider raising with:
 - Any pair
-- Any ace or king
+- Any ace
 - Suited connectors
 - Drawing hands
 - Bluffs to steal pots
 
-Be bold and raise often! Don't just call - RAISE to win (not TOO aggressive though)!
+Be bold and raise! Don't just call - RAISE to win (don't be TOO aggressive though)!
 
 Respond with JSON: {{"action": "fold/call/raise", "amount": number}}
 """
@@ -343,13 +344,13 @@ Respond with JSON: {{"action": "fold/call/raise", "amount": number}}
         # Returning a 'call' with amount 0 represents a check in this codebase.
         if call_amount == 0:
             decision = {'action': 'call', 'amount': 0}
-            print(f"🤖 DEBUG [{self.player.name}] Simple AI decision (check): {decision}")
+            logging.debug(f"🤖 DEBUG [{self.player.name}] Simple AI decision (check): {decision}")
             return decision
 
         # If we don't have enough money to call, fold
         if call_amount > chips:
             decision = {'action': 'fold', 'amount': 0}
-            print(f"🤖 DEBUG [{self.player.name}] Simple AI decision (broke): {decision}")
+            logging.debug(f"🤖 DEBUG [{self.player.name}] Simple AI decision (broke): {decision}")
             return decision
 
         # Very naive rules - now more aggressive!
@@ -360,19 +361,19 @@ Respond with JSON: {{"action": "fold/call/raise", "amount": number}}
             if ranks[0] == ranks[1]:  # pocket pair
                 raise_amount = call_amount + 20
                 decision = {'action': 'raise', 'amount': min(raise_amount, chips)}
-                print(f"🤖 DEBUG [{self.player.name}] Simple AI decision (preflop pair - RAISE): {decision}")
+                logging.debug(f"🤖 DEBUG [{self.player.name}] Simple AI decision (preflop pair - RAISE): {decision}")
                 return decision
             elif ranks[0] >= 12 or ranks[1] >= 12:  # face card
                 raise_amount = call_amount + 15
                 decision = {'action': 'raise', 'amount': min(raise_amount, chips)}
-                print(f"🤖 DEBUG [{self.player.name}] Simple AI decision (preflop high card - RAISE): {decision}")
+                logging.debug(f"🤖 DEBUG [{self.player.name}] Simple AI decision (preflop high card - RAISE): {decision}")
                 return decision
             elif ranks[0] >= 11 or ranks[1] >= 11:  # jack or better
                 decision = {'action': 'call', 'amount': call_amount}
-                print(f"🤖 DEBUG [{self.player.name}] Simple AI decision (preflop decent hand): {decision}")
+                logging.debug(f"🤖 DEBUG [{self.player.name}] Simple AI decision (preflop decent hand): {decision}")
                 return decision
             decision = {'action': 'fold', 'amount': 0}
-            print(f"🤖 DEBUG [{self.player.name}] Simple AI decision (preflop bad hand): {decision}")
+            logging.debug(f"🤖 DEBUG [{self.player.name}] Simple AI decision (preflop bad hand): {decision}")
             return decision
 
         # Postflop: if we have any pair with community, RAISE!
@@ -382,16 +383,16 @@ Respond with JSON: {{"action": "fold/call/raise", "amount": number}}
             # We paired - let's raise!
             raise_amount = call_amount + 25
             decision = {'action': 'raise', 'amount': min(raise_amount, chips)}
-            print(f"🤖 DEBUG [{self.player.name}] Simple AI decision (postflop pair - RAISE): {decision}")
+            logging.debug(f"🤖 DEBUG [{self.player.name}] Simple AI decision (postflop pair - RAISE): {decision}")
             return decision
 
         # If low chips, conserve
         if chips < 50:
             decision = {'action': 'fold', 'amount': 0}
-            print(f"🤖 DEBUG [{self.player.name}] Simple AI decision (low chips): {decision}")
+            logging.debug(f"🤖 DEBUG [{self.player.name}] Simple AI decision (low chips): {decision}")
             return decision
 
-        # default to check/call
-        decision = {'action': 'call', 'amount': call_amount}
-        print(f"🤖 DEBUG [{self.player.name}] Simple AI decision: {decision}")
-        return decision
+            # default to check/call
+            decision = {'action': 'call', 'amount': call_amount}
+            logging.debug(f"🤖 DEBUG [{self.player.name}] Simple AI decision: {decision}")
+            return decision
