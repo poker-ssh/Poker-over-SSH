@@ -1671,7 +1671,10 @@ if asyncssh:
 
         def begin_auth(self, username):
             global _current_ssh_username
-            logging.info(f"Accepting connection for user: {username}")
+            if username == "healthcheck":
+                logging.debug(f"Accepting connection for user: {username}")
+            else:
+                logging.info(f"Accepting connection for user: {username}")
             _current_ssh_username = username
             return ""
 else:
