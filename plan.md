@@ -1,5 +1,8 @@
 # Internal Plan
 
+> ![NOTE]
+> This is very very old and deprecated. Please see [README.md](README.md) for the latest information.
+
 ## Game Design(??)
 
 - Users connect via SSH to play.
