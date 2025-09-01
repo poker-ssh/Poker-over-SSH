@@ -1,6 +1,6 @@
 # Poker-over-SSH
 
-Lightweight, room-aware Texas Hold'em served over [SSH](https://en.wikipedia.org/wiki/Secure_Shell). Players connect with an SSH client and receive a rich terminal UI to join rooms, seat (sit??) at tables, play against humans or AI, and manage persistent wallets. 
+Lightweight, room-aware Texas Hold'em served over [SSH](https://en.wikipedia.org/wiki/Secure_Shell). Players connect with an SSH client and receive a rich terminal UI to join rooms, seat (sit??) at tables, play against humans or AI, and manage persistent wallets.
 
 ## Overview
 
@@ -50,11 +50,11 @@ The in-game action prompt supports `fold`, `call`, `check` (post-flop), `bet <am
 ## Configuration
 
 - Environment variables can be provided via a `.env` file or system environment. Key variables used by the code:
-    - `SERVER_HOST` (default `localhost` when demoing or something)
-    - `SERVER_PORT` (default `22222`)
-    - `HEALTHCHECK_PORT` (default `22223`)
-    - `HEALTHCHECK_INTERVAL` (probe interval in seconds)
-    - `AI_API_KEY`, `AI_API_BASE_URL`, `AI_MODEL`, `AI_TIMEOUT` — configure the AI client used by `poker/ai.py`
+  - `SERVER_HOST` (default `localhost` when demoing or something)
+  - `SERVER_PORT` (default `22222`)
+  - `HEALTHCHECK_PORT` (default `22223`)
+  - `HEALTHCHECK_INTERVAL` (probe interval in seconds)
+  - `AI_API_KEY`, `AI_API_BASE_URL`, `AI_MODEL`, `AI_TIMEOUT` — configure the AI client used by `poker/ai.py`
 
 - See [.env.example](.env.example) for more info.
 
@@ -66,19 +66,18 @@ The in-game action prompt supports `fold`, `call`, `check` (post-flop), `bet <am
 ## Healthcheck
 
 - A small HTTP service probes the SSH server and exposes endpoints:
-    - `/health` — latest probe result (JSON)
-    - `/history` — recent probe history (JSON) (To be deprecated)
+  - `/health` — latest probe result (JSON)
+  - `/history` — recent probe history (JSON) (To be deprecated)
 
 This is started in the background by `main.py` via `start_healthcheck_in_background()`.
 
 ## AI
 
 - The AI will operate in two modes:
-    - External LLM (async OpenAI-compatible client) when `AI_API_KEY` and `AI_API_BASE_URL` are set.
-    - Built-in heuristic(dumb) fallback when external API is unavailable.
+  - External LLM (async OpenAI-compatible client) when `AI_API_KEY` and `AI_API_BASE_URL` are set.
+  - Built-in heuristic(dumb) fallback when external API is unavailable.
 - The AI returns structured JSON ({`action`, `amount`}) and the code contains parsing/validation with sensible fallbacks.
 
 ## License
 
 This project is provided under the terms in the `LICENSE` file (LGPL-2.1 or later). See `LICENSE` for the full license text.
-
