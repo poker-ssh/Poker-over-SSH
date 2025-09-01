@@ -128,16 +128,16 @@ class PlayerManager:
             for player in self.players:
                 if not player.is_ai and player.round_id:
                     # Human player - return chips to wallet
-                    winnings = player.get_winnings()
+                    # Let the wallet manager calculate the actual winnings internally
                     wallet_manager.return_chips_to_wallet(
-                        player.name, player.chips, player.round_id, winnings
+                        player.name, player.chips, player.round_id
                     )
                     
-                    # Log final result
+                    # Log final result with the chips amount
                     db.log_action(
                         player.name, self.room_code, "ROUND_FINISHED", player.chips,
                         round_id=player.round_id,
-                        details=f"Round ended with ${player.chips} chips (${winnings:+} change)"
+                        details=f"Round ended with ${player.chips} chips"
                     )
                 elif player.is_ai:
                     # AI player - check if broke and mark for respawn
