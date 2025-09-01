@@ -26,11 +26,23 @@ In this repo there are: a self-hosted SSH server that runs the game and terminal
 
 3. Connect from any machine with an SSH client:
 
-    ```bash
-    ssh <username>@<server-host> -p 22222
-    ```
+  ```bash
+  ssh <username>@<server-host> -p 22222
+  ```
 
-    Your SSH username is used as your in-game name. Once connected you'll see a short MOTD and an interactive prompt.
+  Your SSH username is used as your in-game name. Once connected you'll see a short MOTD and an interactive prompt.
+
+  If you just want to try the hosted demo, you can connect to the public play server:
+
+  ```bash
+  ssh play.poker.qincai.xyz -p 23456
+  ```
+
+  Or, if you prefer to run the server inside Docker, see the PoS-Docker project for a ready-made containerised image/setup:
+
+  - https://github.com/poker-ssh/PoS-Docker
+
+  The Docker repo contains a Dockerfile and example docker-compose configuration to run the server and healthcheck.
 
 ## Basic commands (typed in the SSH session; we call the shell `posh`)
 
