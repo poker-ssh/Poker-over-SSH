@@ -289,10 +289,16 @@ class Game:
                     
                 # Check if player has no chips
                 if p.chips <= 0:
-                    if p.rebuys < 1:
+                    # Treat p.max_rebuys == None as unlimited. If Player doesn't have
+                    # a max_rebuys attribute, default to unlimited (None).
+                    max_rebuys = getattr(p, 'max_rebuys', None)
+                    # Allow rebuy when max_rebuys is None (unlimited) or when
+                    # p.rebuys is less than the configured limit.
+                    if max_rebuys is None or p.rebuys < max_rebuys:
                         p.chips = 50  # Small rebuy amount
                         p.rebuys += 1
-                        self.action_history.append(f"{p.name} received $50 rebuy (was broke, {p.rebuys}/1)")
+                        max_display = '∞' if max_rebuys is None else str(max_rebuys)
+                        self.action_history.append(f"{p.name} received $50 rebuy (was broke, {p.rebuys}/{max_display})")
                     else:
                         p.state = 'eliminated'
                         self.action_history.append(f"{p.name} eliminated (no rebuys left)")
