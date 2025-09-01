@@ -207,14 +207,20 @@ def hand_description(hand_rank: int, tiebreakers: List[int]) -> str:
 
 
 class Game:
-    def __init__(self, players: List[Any]):
+    def __init__(self, players: List[Any], player_manager=None):
         self.players = players
+        self.player_manager = player_manager  # For wallet syncing
         self.deck: List[Card] = []
         self.pot = 0
         self.community: List[Card] = []
         self.bets: Dict[str, int] = {}  # Total bets across all rounds
         self.round_bets: Dict[str, int] = {}  # Current betting round only
         self.action_history: List[str] = []
+
+    def _sync_wallet_balance(self, player):
+        """Sync a human player's wallet balance with their current chips."""
+        if self.player_manager and not player.is_ai:
+            self.player_manager.sync_wallet_balance(player.name)
 
     def _reset_round(self):
         self.deck = make_deck()
@@ -344,6 +350,7 @@ class Game:
                     call_amount = max(current_bet - player_current_bet, 0)
                     pay = min(call_amount, p.chips)
                     p.chips -= pay
+                    self._sync_wallet_balance(p)  # Sync wallet after chip change
                     self.bets[p.name] += pay
                     self.round_bets[p.name] += pay
                     self.pot += pay
@@ -368,6 +375,7 @@ class Game:
                         call_amount = current_bet - player_current_bet
                         pay = min(call_amount, p.chips)
                         p.chips -= pay
+                        self._sync_wallet_balance(p)  # Sync wallet after chip change
                         self.bets[p.name] += pay
                         self.round_bets[p.name] += pay
                         self.pot += pay
@@ -381,6 +389,7 @@ class Game:
                                 bet_amount = min_bet - player_current_bet
                                 pay = min(bet_amount, p.chips)
                                 p.chips -= pay
+                                self._sync_wallet_balance(p)  # Sync wallet after chip change
                                 self.bets[p.name] += pay
                                 self.round_bets[p.name] += pay
                                 self.pot += pay
@@ -428,6 +437,7 @@ class Game:
                             bet_amount = amt - player_current_bet
                             pay = min(bet_amount, p.chips)
                             p.chips -= pay
+                            self._sync_wallet_balance(p)  # Sync wallet after chip change
                             self.bets[p.name] += pay
                             self.round_bets[p.name] += pay
                             self.pot += pay
@@ -446,6 +456,7 @@ class Game:
                             call_amount = max(current_bet - player_current_bet, 0)
                             pay = min(call_amount, p.chips)
                             p.chips -= pay
+                            self._sync_wallet_balance(p)  # Sync wallet after chip change
                             self.bets[p.name] += pay
                             self.round_bets[p.name] += pay
                             self.pot += pay
@@ -462,6 +473,7 @@ class Game:
                             bet_amount = amt - player_current_bet
                             pay = min(bet_amount, p.chips)
                             p.chips -= pay
+                            self._sync_wallet_balance(p)  # Sync wallet after chip change
                             self.bets[p.name] += pay
                             self.round_bets[p.name] += pay
                             self.pot += pay
@@ -518,9 +530,11 @@ class Game:
                 if winner_player:
                     # Give each winner their share
                     winner_player.chips += winnings_per_player
+                    self._sync_wallet_balance(winner_player)  # Sync wallet after winnings
                     # Give remainder to first winner(s) to avoid losing cents
                     if i < remainder:
                         winner_player.chips += 1
+                        self._sync_wallet_balance(winner_player)  # Sync wallet after remainder
 
         return {'winners': winners, 'pot': self.pot, 'hands': all_player_results, 'all_hands': {p.name: p.hand for p in self.players}}
 

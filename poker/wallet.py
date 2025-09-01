@@ -123,64 +123,16 @@ class WalletManager:
         return saved_count
     
     def get_player_chips_for_game(self, player_name: str, buy_in: int = 200) -> int:
-        """Get all chips from wallet for a player to enter a game (in-memory only)."""
-        logging.debug(f"WalletManager.get_player_chips_for_game: player={player_name}")
-        
+        """DEPRECATED: Get player wallet balance for game (no longer transfers chips)."""
+        logging.debug(f"DEPRECATED: get_player_chips_for_game called for {player_name}")
         wallet = self.get_player_wallet(player_name)
-        logging.debug(f"Player {player_name} wallet balance: ${wallet['balance']}")
-        
-        # Use entire wallet balance as chips
-        chips = wallet['balance']
-        
-        if chips < 1:
-            # Add minimum funds if completely broke (in memory)
-            logging.debug(f"Player {player_name} broke, adding minimum starting funds")
-            self._update_cache(player_name, balance=500)
-            chips = 500
-        
-        # Prevent excessive chip amounts that might indicate corruption
-        if chips > 100000:  # Alert on amounts larger than $100,000
-            logging.warning(f"SUSPICIOUS CHIP AMOUNT for {player_name}: ${chips}. Capping at $100,000")
-            chips = 100000
-            self._update_cache(player_name, balance=100000)
-        
-        logging.debug(f"Player {player_name} bringing all ${chips} into game")
-        
-        # Track the amount taken from wallet for proper winnings calculation
-        # Store the entry amount so we can calculate real winnings later
-        self._update_cache(player_name, balance=0, game_entry_amount=chips)
-        logging.debug(f"Wallet emptied for {player_name}, all ${chips} now in game (in memory)")
-        
-        return chips
+        return wallet['balance']
     
     def return_chips_to_wallet(self, player_name: str, chips: int, 
                               round_id: Optional[str] = None, winnings: int = 0) -> None:
-        """Return chips to player's wallet after a game (in-memory only)."""
-        wallet = self.get_player_wallet(player_name)
-        
-        # The chips already include any winnings/losses, so just add them back to wallet
-        new_balance = wallet['balance'] + chips
-        
-        # Calculate actual winnings based on game entry amount vs final chips
-        game_entry_amount = wallet.get('game_entry_amount', chips)  # Fallback if not tracked
-        actual_winnings = chips - game_entry_amount
-        
-        # Track session winnings for later database save (use actual calculated winnings)
-        session_winnings = wallet.get('session_winnings', 0) + actual_winnings
-        
-        # Clear the game entry amount tracking
-        # Update in-memory cache
-        self._update_cache(
-            player_name, 
-            balance=new_balance,
-            session_winnings=session_winnings,
-            game_entry_amount=0  # Clear the tracking
-        )
-        
-        logging.debug(f"Returned ${chips} to {player_name}'s wallet")
-        logging.debug(f"Game entry: ${game_entry_amount}, Final chips: ${chips}, Actual winnings: ${actual_winnings}")
-        logging.debug(f"New balance: ${new_balance} (in memory)")
-        logging.debug(f"Session winnings tracking: ${session_winnings}")
+        """DEPRECATED: Wallet and chips are now unified - no transfer needed."""
+        logging.debug(f"DEPRECATED: return_chips_to_wallet called for {player_name} with ${chips}")
+        # Do nothing - wallet balance is already updated in real-time
     
     def add_funds(self, player_name: str, amount: int, 
                  reason: str = "Manual add") -> Dict[str, Any]:
@@ -276,10 +228,17 @@ class WalletManager:
             balance = min(balance, 100000)  # Cap display at $100k
             wallet['balance'] = balance  # Fix the cached value
         
+        # Debug: Check if player is currently in a game with different chip count
+        # If so, show that information to help with debugging
+        debug_info = ""
+        game_entry_amount = wallet.get('game_entry_amount', 0)
+        if game_entry_amount > 0:
+            debug_info = f"\n{Colors.DIM}🎮 Currently in game (brought ${game_entry_amount} chips){Colors.RESET}"
+        
         output = []
         output.append(f"{Colors.BOLD}{Colors.GREEN}💰 Wallet for {player_name}{unsaved_indicator}{Colors.RESET}")
         output.append("=" * 40)
-        output.append(f"💵 Balance: {Colors.BOLD}{Colors.CYAN}${balance}{Colors.RESET}")
+        output.append(f"💵 Balance: {Colors.BOLD}{Colors.CYAN}${balance}{Colors.RESET}{debug_info}")
         output.append(f"🎮 Games Played: {wallet['games_played']}")
         output.append(f"📈 Total Winnings: {Colors.GREEN}${wallet['total_winnings']}{Colors.RESET}")
         output.append(f"📉 Total Losses: {Colors.RED}${wallet['total_losses']}{Colors.RESET}")

@@ -62,14 +62,20 @@ class PlayerManager:
             logging.debug(f"Player {name} already exists, returning existing player")
             return existing
         
-        # Get chips from wallet for human players
+        # Get chips from wallet for human players (just read balance, don't transfer)
         if not is_ai:
             try:
                 from poker.wallet import get_wallet_manager
                 wallet_manager = get_wallet_manager()
-                logging.debug(f"Getting all wallet funds for human player {name}")
-                chips = wallet_manager.get_player_chips_for_game(name)  # No buy_in parameter needed
-                logging.debug(f"Player {name} has {chips} chips from entire wallet")
+                wallet = wallet_manager.get_player_wallet(name)
+                chips = wallet['balance']
+                logging.debug(f"Player {name} has ${chips} chips in wallet")
+                
+                # Ensure minimum balance
+                if chips < 1:
+                    logging.debug(f"Player {name} has insufficient funds, adding minimum")
+                    wallet_manager.add_funds(name, 500, "Minimum balance top-up")
+                    chips = 500
             except ImportError:
                 # Fallback if wallet system not available
                 logging.debug("Wallet system not available, using default chips")
@@ -118,7 +124,7 @@ class PlayerManager:
         return None
     
     def finish_round(self):
-        """Handle end of round - return chips to wallets and log results."""
+        """Handle end of round - update wallet balances and log results."""
         try:
             from poker.wallet import get_wallet_manager
             from poker.database import get_database
@@ -127,13 +133,11 @@ class PlayerManager:
             
             for player in self.players:
                 if not player.is_ai and player.round_id:
-                    # Human player - return chips to wallet
-                    # Let the wallet manager calculate the actual winnings internally
-                    wallet_manager.return_chips_to_wallet(
-                        player.name, player.chips, player.round_id
-                    )
+                    # Human player - update wallet balance to match current chips
+                    # The wallet balance IS the chips - no transfer needed
+                    wallet_manager._update_cache(player.name, balance=player.chips)
                     
-                    # Log final result with the chips amount
+                    # Log final result
                     db.log_action(
                         player.name, self.room_code, "ROUND_FINISHED", player.chips,
                         round_id=player.round_id,
@@ -171,6 +175,21 @@ class PlayerManager:
             # Fallback if wallet/database system not available
             pass
     
+    def sync_wallet_balance(self, player_name: str):
+        """Sync a human player's wallet balance with their current chips."""
+        player = next((p for p in self.players if p.name == player_name), None)
+        if not player or player.is_ai:
+            return
+        
+        try:
+            from poker.wallet import get_wallet_manager
+            wallet_manager = get_wallet_manager()
+            # Update wallet balance to match current chips
+            wallet_manager._update_cache(player_name, balance=player.chips)
+            logging.debug(f"Synced wallet balance for {player_name}: ${player.chips}")
+        except Exception as e:
+            logging.error(f"Failed to sync wallet for {player_name}: {e}")
+
     def log_player_action(self, player_name: str, action_type: str, amount: int = 0, 
                          game_phase: Optional[str] = None, details: Optional[str] = None):
         """Log a player action to the database."""
