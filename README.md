@@ -44,7 +44,7 @@ Your SSH username will be used as your in-game name. This is a public demo insta
 
   Or, if you prefer to run the server inside Docker, see the PoS-Docker project for a ready-made containerised image/setup:
 
-  - https://github.com/poker-ssh/PoS-Docker
+- <https://github.com/poker-ssh/PoS-Docker>
 
   The Docker repo contains a Dockerfile and example docker-compose configuration to run the server and healthcheck.
 
