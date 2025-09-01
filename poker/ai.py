@@ -221,12 +221,11 @@ Your options:
 
 PLAY FAIRLY AGGRESSIVELY (but within reason please)! You should raise to build pots and put pressure on opponents. Consider raising with:
 - Any pair
-- Any ace
 - Suited connectors
 - Drawing hands
 - Bluffs to steal pots
 
-Be bold and raise! Don't just call - RAISE to win (don't be TOO aggressive though)!
+Be bold and raise! Don't just call - RAISE to win (don't be TOO aggressive though; you have limited money)!
 
 Respond with JSON: {{"action": "fold/call/raise", "amount": number}}
 """
