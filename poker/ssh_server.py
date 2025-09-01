@@ -1671,7 +1671,22 @@ if asyncssh:
 
         def begin_auth(self, username):
             global _current_ssh_username
-            logging.info(f"Accepting connection for user: {username}")
+            # Try to get the peer IP/port from the transport
+            peer_ip = peer_port = None
+            try:
+                transport = getattr(self, '_transport', None)
+                if transport is not None:
+                    peer = transport.get_extra_info('peername')
+                    if peer:
+                        peer_ip, peer_port = peer[0], peer[1]
+            except Exception:
+                pass
+
+            ip_info = f" from {peer_ip}:{peer_port}" if peer_ip and peer_port else ""
+            if username == "healthcheck":
+                logging.debug(f"Accepting connection for user: {username}{ip_info}")
+            else:
+                logging.info(f"Accepting connection for user: {username}{ip_info}")
             _current_ssh_username = username
             return ""
 else:
