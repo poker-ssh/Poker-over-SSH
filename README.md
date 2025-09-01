@@ -14,6 +14,16 @@ In this repo there are: a self-hosted SSH server that runs the game and terminal
 
 ## Quickstart (local development)
 
+### Play the public demo (fast)
+
+Want to try the game right away? Connect to the public demo server:
+
+```bash
+ssh play.poker.qincai.xyz -p 23456
+```
+
+Your SSH username will be used as your in-game name. This is a public demo instance — expect ephemeral data and occasional resets of database (oh and downtime). Don't use private keys when trying the demo.
+
 1. Create a Python virtualenv and install dependencies listed in `requirements.txt`.
 
 2. Run the server locally:
@@ -31,12 +41,6 @@ In this repo there are: a self-hosted SSH server that runs the game and terminal
   ```
 
   Your SSH username is used as your in-game name. Once connected you'll see a short MOTD and an interactive prompt.
-
-  If you just want to try the hosted demo, you can connect to the public play server:
-
-  ```bash
-  ssh play.poker.qincai.xyz -p 23456
-  ```
 
   Or, if you prefer to run the server inside Docker, see the PoS-Docker project for a ready-made containerised image/setup:
 
