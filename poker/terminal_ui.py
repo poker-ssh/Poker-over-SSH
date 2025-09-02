@@ -167,7 +167,7 @@ class TerminalUI:
         out.append(f"{Colors.BOLD}{Colors.YELLOW}🎰 POKER-OVER-SSH 🎰{Colors.RESET}")
         
         # Show layout indicator for debugging (can be removed later)
-        if terminal_width >= 90:
+        if terminal_width >= 80:
             out.append(f"{Colors.DIM}(Two-column layout - {terminal_width} chars){Colors.RESET}")
         else:
             out.append(f"{Colors.DIM}(Vertical layout - {terminal_width} chars){Colors.RESET}")
@@ -322,8 +322,8 @@ class TerminalUI:
             game_line = self._pad_line(game_lines[i], game_width)
             chat_line = chat_lines[i] if i < len(chat_lines) else ""
             
-            # Add vertical separator
-            separator = f" {Colors.DIM}│{Colors.RESET} "
+            # Use tab for alignment and vertical separator
+            separator = f"\t{Colors.DIM}│{Colors.RESET}\t"
             combined_line = game_line + separator + chat_line
             combined_lines.append(combined_line)
         
@@ -343,7 +343,7 @@ class TerminalUI:
         # print(f"DEBUG: Detected terminal width: {terminal_width}")
         
         # If terminal is too narrow, fall back to vertical layout
-        if terminal_width < 90:  # Lowered from 100 to 90 for easier testing
+        if terminal_width < 80:  # Lowered from 90 to 80 for better compatibility
             return self._render_vertical_layout(game_state, player_hand, action_history, show_all_hands, chat_messages)
         
         # Two-column layout for wide terminals
@@ -361,8 +361,9 @@ class TerminalUI:
 
     def _render_vertical_layout(self, game_state: dict, player_hand=None, action_history=None, show_all_hands=False, chat_messages=None) -> str:
         """Fallback to vertical layout for narrow terminals."""
-        # Use the original single-column layout
-        game_lines = self._render_game_column(game_state, player_hand, action_history, show_all_hands)
+        # Use the original single-column layout with full terminal width
+        terminal_width = self._get_terminal_width()
+        game_lines = self._render_game_column(game_state, player_hand, action_history, show_all_hands, terminal_width - 10, terminal_width)
         
         # Add chat section at the bottom
         if chat_messages:
