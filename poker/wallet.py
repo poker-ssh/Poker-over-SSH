@@ -41,6 +41,9 @@ class WalletManager:
         
         # Load from database and cache it
         wallet = self.db.get_wallet(player_name)
+        # Initialize session tracking
+        wallet['session_start_balance'] = wallet['balance']
+        wallet['session_winnings'] = 0
         self._wallet_cache[player_name] = wallet.copy()
         return wallet
     
@@ -48,15 +51,18 @@ class WalletManager:
         """Update wallet cache with new values."""
         if player_name not in self._wallet_cache:
             self._wallet_cache[player_name] = self.db.get_wallet(player_name)
+            # Initialize session tracking
+            self._wallet_cache[player_name]['session_start_balance'] = self._wallet_cache[player_name]['balance']
         
         # Update the cached values
         for key, value in updates.items():
-            if key == 'session_winnings':
-                # Accumulate session winnings instead of replacing
-                current_session = self._wallet_cache[player_name].get('session_winnings', 0)
-                self._wallet_cache[player_name][key] = current_session + value
-            else:
-                self._wallet_cache[player_name][key] = value
+            self._wallet_cache[player_name][key] = value
+        
+        # Calculate session winnings as difference from session start
+        if 'balance' in updates:
+            session_start = self._wallet_cache[player_name].get('session_start_balance', updates['balance'])
+            current_balance = updates['balance']
+            self._wallet_cache[player_name]['session_winnings'] = current_balance - session_start
         
         # Update last activity
         self._wallet_cache[player_name]['last_activity'] = time.time()
@@ -96,17 +102,20 @@ class WalletManager:
                 f"Manual save: ${old_balance} -> ${new_balance}"
             )
             
-            # Update game stats
-            winnings_change = wallet.get('session_winnings', 0)
-            self.db.update_game_stats(player_name, winnings_change)
-            # Reset session winnings after save
+            # Update game stats with the actual balance change (not session total)
+            balance_change = new_balance - old_balance
+            if balance_change != 0:
+                self.db.update_game_stats(player_name, balance_change)
+            
+            # Reset session tracking after save
             wallet['session_winnings'] = 0
+            wallet['session_start_balance'] = new_balance
             
             # Update cache with fresh database state to clear "unsaved" status
             updated_wallet = self.db.get_wallet(player_name)
-            # Preserve session winnings if we didn't save them
-            if 'session_winnings' in wallet and winnings_change == 0:
-                updated_wallet['session_winnings'] = wallet['session_winnings']
+            # Restore session tracking
+            updated_wallet['session_winnings'] = 0
+            updated_wallet['session_start_balance'] = new_balance
             self._wallet_cache[player_name] = updated_wallet
             
             logging.info(f"Wallet saved for {player_name}: ${new_balance}")

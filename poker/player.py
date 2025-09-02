@@ -135,14 +135,14 @@ class PlayerManager:
                 if not player.is_ai and player.round_id:
                     # Human player - update wallet balance to match current chips
                     # The wallet balance IS the chips - no transfer needed
-                    winnings = player.get_winnings()
-                    wallet_manager._update_cache(player.name, balance=player.chips, session_winnings=winnings)
+                    wallet_manager._update_cache(player.name, balance=player.chips)
                     
-                    # Log final result
+                    # Log final result with round winnings
+                    round_winnings = player.get_winnings()
                     db.log_action(
                         player.name, self.room_code, "ROUND_FINISHED", player.chips,
                         round_id=player.round_id,
-                        details=f"Round ended with ${player.chips} chips (winnings: ${winnings:+})"
+                        details=f"Round ended with ${player.chips} chips (round winnings: ${round_winnings:+})"
                     )
                 elif player.is_ai:
                     # AI player - check if broke and respawn/reset chips instead of removing
