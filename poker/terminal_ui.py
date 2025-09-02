@@ -87,6 +87,7 @@ class TerminalUI:
     def __init__(self, player_name: str):
         self.player_name = player_name
         self.cards_hidden = False  # Track whether player has hidden their cards
+        self.terminal_width = 120  # Default width, can be detected dynamically
 
     def toggle_cards_visibility(self) -> str:
         """Toggle the visibility of player's cards and return status message."""
@@ -96,13 +97,80 @@ class TerminalUI:
         else:
             return f"{Colors.GREEN}👀 Cards now visible{Colors.RESET}"
 
-    def render(self, game_state: dict, player_hand=None, action_history=None, show_all_hands=False) -> str:
-        """Render the current game state as a colorized string with optional action history and all hands."""
+    def _get_terminal_width(self) -> int:
+        """Get terminal width, with fallback to default."""
+        try:
+            import os
+            import shutil
+            # Try to get actual terminal width
+            width = shutil.get_terminal_size().columns
+            if width > 0:
+                return width
+            # Fall back to COLUMNS env var
+            return int(os.environ.get('COLUMNS', self.terminal_width))
+        except (ValueError, TypeError, OSError):
+            return self.terminal_width
+
+    def _pad_line(self, line: str, width: int) -> str:
+        """Pad a line to specified width, handling ANSI escape codes."""
+        # Remove ANSI escape codes for length calculation
+        import re
+        clean_line = re.sub(r'\033\[[0-9;]*m', '', line)
+        padding_needed = max(0, width - len(clean_line))
+        return line + ' ' * padding_needed
+
+    def _render_chat_column(self, chat_messages: list, width: int) -> list:
+        """Render chat messages in a column format."""
+        if not chat_messages:
+            chat_lines = [
+                f"{Colors.BOLD}{Colors.MAGENTA}💬 Chat{Colors.RESET}",
+                f"{Colors.DIM}(No recent messages){Colors.RESET}",
+                "",
+                f"{Colors.DIM}Type: {Colors.CYAN}c <message>{Colors.RESET}",
+                f"{Colors.DIM}   or {Colors.CYAN}chat <message>{Colors.RESET}"
+            ]
+        else:
+            chat_lines = [f"{Colors.BOLD}{Colors.MAGENTA}💬 Chat{Colors.RESET}"]
+            for msg in chat_messages[-8:]:  # Show last 8 messages
+                # Wrap long messages to fit in chat column
+                if len(msg) > width - 2:
+                    # Simple word wrap for chat messages
+                    words = msg.split()
+                    current_line = ""
+                    for word in words:
+                        if len(current_line + word) < width - 2:
+                            current_line += word + " "
+                        else:
+                            if current_line:
+                                chat_lines.append(current_line.rstrip())
+                            current_line = word + " "
+                    if current_line:
+                        chat_lines.append(current_line.rstrip())
+                else:
+                    chat_lines.append(msg)
+            
+            # Add usage hint at bottom of chat
+            chat_lines.extend([
+                "",
+                f"{Colors.DIM}Type: {Colors.CYAN}c <message>{Colors.RESET}"
+            ])
+        
+        # Pad all lines to consistent width
+        return [self._pad_line(line, width) for line in chat_lines]
+
+    def _render_game_column(self, game_state, player_hand, action_history, show_all_hands, width, terminal_width):
+        """Render the game state content for the left column."""
         out = []
         
         # Clear screen and show header
         out.append(Colors.CLEAR_SCREEN)
         out.append(f"{Colors.BOLD}{Colors.YELLOW}🎰 POKER-OVER-SSH 🎰{Colors.RESET}")
+        
+        # Show layout indicator for debugging (can be removed later)
+        if terminal_width >= 90:
+            out.append(f"{Colors.DIM}(Two-column layout - {terminal_width} chars){Colors.RESET}")
+        else:
+            out.append(f"{Colors.DIM}(Vertical layout - {terminal_width} chars){Colors.RESET}")
         out.append("")
         
         # Current player indicator
@@ -135,43 +203,32 @@ class TerminalUI:
             current_bet = max(bets.values())
             if current_bet > 0:
                 out.append(f"{Colors.BOLD}{Colors.CYAN}🎲 Current Bet: ${current_bet}{Colors.RESET}")
-                # Show who made the bet
-                for player_name, bet_amount in bets.items():
-                    if bet_amount == current_bet and bet_amount > 0:
-                        out.append(f"   {Colors.DIM}(set by {player_name}){Colors.RESET}")
-                last_bettor = game_state.get('last_bettor')
-                if last_bettor:
-                    out.append(f"   {Colors.DIM}(set by {last_bettor}){Colors.RESET}")
         out.append("")
         
         # Show action history if provided
         if action_history:
             out.append(f"{Colors.BOLD}{Colors.CYAN}📝 Recent Actions:{Colors.RESET}")
-            for action in action_history[-5:]:  # Show last 5 actions
+            for action in action_history[-3:]:  # Show last 3 actions to save space
                 out.append(f"   {Colors.DIM}• {action}{Colors.RESET}")
             out.append("")
         
         # Player's hand (if provided)
         if player_hand:
-            # Show hide/show button - text-based only for reliability
+            # Show hide/show button
             button_text = "👀 SHOW CARDS" if self.cards_hidden else "🙈 HIDE CARDS"
             button_color = Colors.GREEN if self.cards_hidden else Colors.YELLOW
-            
-            # Create a visual button display (no hyperlink to avoid browser issues)
             button_display = f"[{button_color}{Colors.BOLD} {button_text} {Colors.RESET}]"
             
             out.append(f"{Colors.BOLD}{Colors.CYAN}🂠 Your Hand:{Colors.RESET} {button_display}")
-            out.append(f"   {Colors.DIM}{Colors.GREY_256}(Type 'togglecards' or 'tgc' to change){Colors.RESET}")
+            out.append(f"   {Colors.DIM}{Colors.GREY_256}(Type 'tgc' to toggle){Colors.RESET}")
             
             if not self.cards_hidden:
-                # Show cards normally
                 hand_cards = cards_horizontal(player_hand)
                 for line in hand_cards.split('\n'):
                     out.append(f"   {line}")
             else:
-                # Show hidden cards placeholder
                 out.append(f"   {Colors.DIM}╭─────╮ ╭─────╮{Colors.RESET}")
-                out.append(f"   {Colors.DIM}│ ??? │ │ ??? │  {Colors.CYAN}[Cards hidden for privacy]{Colors.RESET}")
+                out.append(f"   {Colors.DIM}│ ??? │ │ ??? │  {Colors.CYAN}[Hidden]{Colors.RESET}")
                 out.append(f"   {Colors.DIM}╰─────╯ ╰─────╯{Colors.RESET}")
             out.append("")
         
@@ -179,7 +236,6 @@ class TerminalUI:
         community_cards = game_state.get('community', [])
         num_community = len(community_cards)
         
-        # Determine phase
         if num_community == 0:
             phase = f"{Colors.YELLOW}Pre-Flop{Colors.RESET}"
         elif num_community == 3:
@@ -203,7 +259,7 @@ class TerminalUI:
         # Show all hands if requested (at end of round)
         if show_all_hands:
             all_hands = game_state.get('all_hands', {})
-            hand_evaluations = game_state.get('hands', {})  # Get hand evaluations if available
+            hand_evaluations = game_state.get('hands', {})
             
             if all_hands:
                 out.append(f"{Colors.BOLD}{Colors.MAGENTA}🎴 All Players' Hands:{Colors.RESET}")
@@ -211,7 +267,6 @@ class TerminalUI:
                     hand_cards = cards_horizontal(hand)
                     indicator = "👤" if player_name == self.player_name else "🎭"
                     
-                    # Get hand description if available
                     hand_desc = ""
                     if hand_evaluations and player_name in hand_evaluations:
                         try:
@@ -225,8 +280,7 @@ class TerminalUI:
                     for line in hand_cards.split('\n'):
                         out.append(f"     {line}")
                     out.append("")
-                out.append("")
-            
+        
         # Players table with betting info
         out.append(f"{Colors.BOLD}{Colors.MAGENTA}👥 Players:{Colors.RESET}")
         bets = game_state.get('bets', {})
@@ -234,31 +288,90 @@ class TerminalUI:
             if len(player_data) == 4:
                 n, chips, state, is_ai = player_data
             else:
-                # Backwards compatibility
                 n, chips, state = player_data
                 is_ai = False
                 
             status_color = Colors.GREEN if state == 'active' else Colors.RED if state == 'folded' else Colors.YELLOW
             
-            # Different icons for different player types
             if n == self.player_name:
-                player_indicator = "👤"  # Current human player
-                # No need to show wallet during game since all funds are now chips
-                wallet_info = ""
+                player_indicator = "👤"
             elif is_ai:
-                player_indicator = "🤖"  # AI player
-                wallet_info = ""
+                player_indicator = "🤖"
             else:
-                player_indicator = "🎭"  # Other human player
-                wallet_info = ""
+                player_indicator = "🎭"
             
-            # Show current bet for this player
             player_bet = bets.get(n, 0)
             bet_info = f" [bet: ${player_bet}]" if player_bet > 0 else ""
             
-            out.append(f"   {player_indicator} {Colors.BOLD}{n}{Colors.RESET}: {status_color}${chips} ({state}){Colors.RESET}{Colors.DIM}{bet_info}{wallet_info}{Colors.RESET}")
+            out.append(f"   {player_indicator} {Colors.BOLD}{n}{Colors.RESET}: {status_color}${chips} ({state}){Colors.RESET}{Colors.DIM}{bet_info}{Colors.RESET}")
         
-        out.append("")
-        out.append(f"{Colors.BOLD}{Colors.BLUE}{'='*50}{Colors.RESET}")
+        return out
+
+    def _combine_columns(self, game_lines: list, chat_lines: list, game_width: int, chat_width: int) -> str:
+        """Combine game and chat columns into a two-column layout."""
+        max_lines = max(len(game_lines), len(chat_lines))
+        combined_lines = []
         
-        return "\n".join(out)
+        # Pad shorter column with empty lines
+        while len(game_lines) < max_lines:
+            game_lines.append("")
+        while len(chat_lines) < max_lines:
+            chat_lines.append("")
+        
+        for i in range(max_lines):
+            game_line = self._pad_line(game_lines[i], game_width)
+            chat_line = chat_lines[i] if i < len(chat_lines) else ""
+            
+            # Add vertical separator
+            separator = f" {Colors.DIM}│{Colors.RESET} "
+            combined_line = game_line + separator + chat_line
+            combined_lines.append(combined_line)
+        
+        # Add bottom border
+        combined_lines.append(f"{Colors.BOLD}{Colors.BLUE}{'='*game_width}{Colors.DIM} │ {'='*chat_width}{Colors.RESET}")
+        
+        return "\n".join(combined_lines)
+
+    def _render_vertical_layout(self, game_state: dict, player_hand=None, action_history=None, show_all_hands=False, chat_messages=None) -> str:
+        """Fallback to vertical layout for narrow terminals."""
+
+    def render(self, game_state: dict, player_hand=None, action_history=None, show_all_hands=False, chat_messages=None) -> str:
+        """Render the current game state as a colorized string with chat on the right side."""
+        terminal_width = self._get_terminal_width()
+        
+        # Debug: Add a comment to show detected width (remove this later)
+        # print(f"DEBUG: Detected terminal width: {terminal_width}")
+        
+        # If terminal is too narrow, fall back to vertical layout
+        if terminal_width < 90:  # Lowered from 100 to 90 for easier testing
+            return self._render_vertical_layout(game_state, player_hand, action_history, show_all_hands, chat_messages)
+        
+        # Two-column layout for wide terminals
+        chat_width = 35
+        game_width = terminal_width - chat_width - 3  # 3 chars for separator
+        
+        # Render game content (left column)
+        game_lines = self._render_game_column(game_state, player_hand, action_history, show_all_hands, game_width, terminal_width)
+        
+        # Render chat content (right column)
+        chat_lines = self._render_chat_column(chat_messages or [], chat_width)
+        
+        # Combine columns
+        return self._combine_columns(game_lines, chat_lines, game_width, chat_width)
+
+    def _render_vertical_layout(self, game_state: dict, player_hand=None, action_history=None, show_all_hands=False, chat_messages=None) -> str:
+        """Fallback to vertical layout for narrow terminals."""
+        # Use the original single-column layout
+        game_lines = self._render_game_column(game_state, player_hand, action_history, show_all_hands)
+        
+        # Add chat section at the bottom
+        if chat_messages:
+            game_lines.append("")
+            game_lines.append(f"{Colors.BOLD}{Colors.MAGENTA}� Chat:{Colors.RESET}")
+            for msg in chat_messages[-5:]:  # Show last 5 messages
+                game_lines.append(f"   {msg}")
+            game_lines.append("")
+        
+        game_lines.append(f"{Colors.BOLD}{Colors.BLUE}{'='*50}{Colors.RESET}")
+        
+        return "\n".join(game_lines)

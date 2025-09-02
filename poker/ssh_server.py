@@ -310,6 +310,12 @@ class RoomSession:
             await self._handle_toggle_cards()
             return
 
+        # Chat commands
+        if cmd.lower().startswith("chat ") or cmd.lower().startswith("c "):
+            logging.debug(f"User {self._username} sending chat message")
+            await self._handle_chat(cmd)
+            return
+
         # Unknown command
         logging.debug(f"User {self._username} used unknown command: {cmd}")
         try:
@@ -363,6 +369,7 @@ class RoomSession:
             self._stdout.write("  wallet   Show your wallet balance and stats\r\n")
             self._stdout.write("  roomctl  Room management commands\r\n")
             self._stdout.write("  togglecards / tgc  - Toggle card visibility for privacy\r\n")
+            self._stdout.write("  chat <message> / c <message> - Send a chat message to all players in room\r\n")
             self._stdout.write("  quit     Disconnect\r\n")
             self._stdout.write("\r\n💰 Wallet Commands:\r\n")
             self._stdout.write("  wallet               - Show wallet balance and stats\r\n")
@@ -383,6 +390,9 @@ class RoomSession:
             self._stdout.write("\r\n🎮 Game Commands:\r\n")
             self._stdout.write("  togglecards / tgc  - Toggle card visibility for privacy\r\n")
             self._stdout.write("  togglecards            - Toggle card visibility on/off\r\n")
+            self._stdout.write("\r\n💬 Chat Commands:\r\n")
+            self._stdout.write("  chat <message> / c <message> - Send a chat message to all players in room\r\n")
+            self._stdout.write("    Example: chat Hello everyone! or c Good luck!\r\n")
             self._stdout.write("\r\n💡 Tips:\r\n")
             self._stdout.write("  - Your wallet persists across server restarts\r\n")
             self._stdout.write("  - All actions are logged to the database\r\n")
@@ -732,6 +742,47 @@ class RoomSession:
             self._stdout.write(f"❌ Error toggling cards: {e}\r\n\r\n❯ ")
             await self._stdout.drain()
 
+    async def _handle_chat(self, cmd: str):
+        """Handle chat commands."""
+        try:
+            if not self._server_state or not self._username:
+                self._stdout.write("❌ Server state or username not available\r\n\r\n❯ ")
+                await self._stdout.drain()
+                return
+                
+            room = self._server_state.room_manager.get_room(self._current_room)
+            if not room:
+                self._stdout.write(f"❌ Current room not found\r\n\r\n❯ ")
+                await self._stdout.drain()
+                return
+            
+            # Extract message from command
+            if cmd.lower().startswith("chat "):
+                message = cmd[5:].strip()
+            elif cmd.lower().startswith("c "):
+                message = cmd[2:].strip()
+            else:
+                self._stdout.write(f"❌ Invalid chat command format\r\n\r\n❯ ")
+                await self._stdout.drain()
+                return
+            
+            if not message:
+                self._stdout.write(f"❌ Empty message. Usage: chat <message> or c <message>\r\n\r\n❯ ")
+                await self._stdout.drain()
+                return
+            
+            # Add message to room chat
+            chat_message = room.chat_manager.add_message(self._username, message)
+            
+            # Broadcast to all players in the room
+            await self._broadcast_chat_message(room, chat_message)
+            
+            # Don't print ❯ here as broadcast will handle UI updates
+            
+        except Exception as e:
+            self._stdout.write(f"❌ Error sending chat message: {e}\r\n\r\n❯ ")
+            await self._stdout.drain()
+
     async def _handle_wallet(self):
         """Handle wallet command - show wallet info."""
         try:
@@ -1040,9 +1091,13 @@ class RoomSession:
             # Register player in the room
             player = await self._register_player_for_room(name, room)
             
+            # Add system message to chat
+            room.chat_manager.add_system_message(f"{name} joined the table")
+            
             self._stdout.write(f"✅ {Colors.GREEN}Seat claimed for {Colors.BOLD}{name}{Colors.RESET}{Colors.GREEN} in room '{room.name}'!{Colors.RESET}\r\n")
             self._stdout.write(f"💰 Starting chips: ${player.chips}\r\n")
-            self._stdout.write(f"🎲 Type '{Colors.CYAN}start{Colors.RESET}' to begin a poker round.\r\n\r\n❯ ")
+            self._stdout.write(f"🎲 Type '{Colors.CYAN}start{Colors.RESET}' to begin a poker round.\r\n")
+            self._stdout.write(f"💬 Type '{Colors.CYAN}chat <message>{Colors.RESET}' or '{Colors.CYAN}c <message>{Colors.RESET}' to chat with other players.\r\n\r\n❯ ")
             await self._stdout.drain()
             
         except Exception as e:
@@ -1078,9 +1133,13 @@ class RoomSession:
                     from poker.terminal_ui import TerminalUI
                     self._ui = TerminalUI(player.name)
                 
+                # Get recent chat messages for display
+                chat_messages = room.chat_manager.format_chat_history(player.name, 5)
+                
                 # show public state and player's private hand
                 action_history = game_state.get('action_history', [])
-                view = self._ui.render(game_state, player_hand=player.hand, action_history=action_history)
+                view = self._ui.render(game_state, player_hand=player.hand, action_history=action_history, 
+                                     chat_messages=chat_messages)
                 
                 # Check if session is still connected
                 if self._stdout.is_closing():
@@ -1158,6 +1217,7 @@ class RoomSession:
                                 self._stdout.write(f"  check       - Pass with no bet\r\n")
                         self._stdout.write(f"  bet <amount>, b <amount> - Bet specified amount\r\n")
                         self._stdout.write("  togglecards, tgc - Toggle card visibility\r\n")
+                        self._stdout.write("  chat <message>, c <message> - Send a chat message\r\n")
                         self._stdout.write(f"\r\nEnter your action: ")
                         await self._stdout.drain()
                         continue
@@ -1167,11 +1227,26 @@ class RoomSession:
                         status_msg = self._ui.toggle_cards_visibility()
                         
                         # Re-render the game state with updated card visibility
-                        view = self._ui.render(game_state, player_hand=player.hand, action_history=action_history)
+                        view = self._ui.render(game_state, player_hand=player.hand, action_history=action_history, 
+                                             chat_messages=chat_messages)
                         self._stdout.write(f"\r{view}\r\n")
                         self._stdout.write(f"{status_msg}\r\n")
                         self._stdout.write(f"\r\n{Colors.BOLD}Enter your action:{Colors.RESET} ")
                         await self._stdout.drain()
+                        continue
+                    
+                    # Handle chat during gameplay
+                    if cmd in ('chat', 'c') and len(parts) > 1:
+                        message = ' '.join(parts[1:])
+                        if message.strip():
+                            # Add message to room chat
+                            chat_message = room.chat_manager.add_message(player.name, message)
+                            
+                            # Broadcast to all players in the room
+                            await self._broadcast_chat_message(room, chat_message)
+                            
+                            self._stdout.write(f"\r\n{Colors.BOLD}Enter your action:{Colors.RESET} ")
+                            await self._stdout.drain()
                         continue
                     
                     # Handle fold with confirmation for significant actions
@@ -1293,6 +1368,48 @@ class RoomSession:
             except Exception as e:
                 logging.error(f"Error broadcasting AI thinking status to {session_player.name}: {e}")
 
+    async def _broadcast_chat_message(self, room, chat_message):
+        """Broadcast a chat message to all players in the room."""
+        formatted_msg = chat_message.format_message()
+        
+        for session, session_player in list(room.session_map.items()):
+            try:
+                if session._stdout.is_closing():
+                    continue
+                
+                # Show the chat message
+                session._stdout.write(f"\r{formatted_msg}\r\n")
+                
+                # If there's a game in progress, re-render the game state with chat
+                if room.game_in_progress and hasattr(room, '_current_game_state'):
+                    # Use persistent UI instance for each session
+                    if not hasattr(session, '_ui'):
+                        from poker.terminal_ui import TerminalUI
+                        session._ui = TerminalUI(session_player.name)
+                    
+                    # Get recent chat messages for display
+                    chat_messages = room.chat_manager.format_chat_history(session_player.name, 5)
+                    
+                    # Show game state with chat
+                    action_history = room._current_game_state.get('action_history', [])
+                    view = session._ui.render(
+                        room._current_game_state, 
+                        player_hand=session_player.hand if hasattr(session_player, 'hand') else None, 
+                        action_history=action_history,
+                        chat_messages=chat_messages
+                    )
+                    session._stdout.write(f"{view}\r\n")
+                
+                # Show prompt unless it's the sender (they'll get their own prompt)
+                if session._username != chat_message.username:
+                    session._stdout.write("❯ ")
+                else:
+                    session._stdout.write("❯ ")
+                    
+                await session._stdout.drain()
+            except Exception as e:
+                logging.error(f"Error broadcasting chat message to {session_player.name}: {e}")
+
     async def _broadcast_waiting_status(self, current_player_name: str, game_state: Dict[str, Any], room):
         """Broadcast the current game state to all players in the room showing who they're waiting for."""
         for session, session_player in list(room.session_map.items()):
@@ -1305,9 +1422,17 @@ class RoomSession:
                     from poker.terminal_ui import TerminalUI
                     session._ui = TerminalUI(session_player.name)
                 
+                # Get recent chat messages for display
+                chat_messages = room.chat_manager.format_chat_history(session_player.name, 5)
+                
                 # Show game state with waiting indicator
                 action_history = game_state.get('action_history', [])
-                view = session._ui.render(game_state, player_hand=session_player.hand, action_history=action_history)
+                view = session._ui.render(
+                    game_state, 
+                    player_hand=session_player.hand, 
+                    action_history=action_history,
+                    chat_messages=chat_messages
+                )
                 session._stdout.write(view + "\r\n")
                 
                 # Show waiting message if it's not this player's turn
@@ -1462,11 +1587,15 @@ class RoomSession:
                             }
                             
                             # Render final view with all hands shown (override hide setting for final results)
+                            # Get recent chat messages for display
+                            chat_messages = room.chat_manager.format_chat_history(player.name, 5)
+                            
                             # Temporarily show cards for final results regardless of hide setting
                             original_hidden_state = session._ui.cards_hidden
                             session._ui.cards_hidden = False  # Force show for final results
                             final_view = session._ui.render(final_state, player_hand=player.hand, 
-                                                 action_history=game.action_history, show_all_hands=True)
+                                                 action_history=game.action_history, show_all_hands=True, 
+                                                 chat_messages=chat_messages)
                             session._ui.cards_hidden = original_hidden_state  # Restore original state
                             session._stdout.write(final_view + "\r\n")
                                 
@@ -1602,6 +1731,12 @@ class RoomSession:
             try:
                 for room_code, room in self._server_state.room_manager.rooms.items():
                     if self in room.session_map:
+                        # Get the player name for the chat message before removing
+                        player = room.session_map[self]
+                        if hasattr(player, 'name') and player.name:
+                            # Add system message to chat
+                            room.chat_manager.add_system_message(f"{player.name} left the table")
+                        
                         del room.session_map[self]
                         logging.info(f"Cleaned up session from room {room_code}")
                 if self in self._server_state.session_rooms:

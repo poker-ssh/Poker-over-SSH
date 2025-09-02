@@ -13,6 +13,7 @@ import random
 from typing import Dict, Optional, List, Any
 from dataclasses import dataclass
 from poker.player import PlayerManager
+from poker.chat import ChatManager
 
 
 # Word lists for generating room codes
@@ -51,6 +52,8 @@ class Room:
     
     def __post_init__(self):
         self._game_lock = asyncio.Lock()
+        # Initialize chat manager for this room
+        self.chat_manager = ChatManager()
     
     def is_expired(self) -> bool:
         """Check if the room has expired."""
