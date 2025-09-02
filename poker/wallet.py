@@ -41,6 +41,9 @@ class WalletManager:
         
         # Load from database and cache it
         wallet = self.db.get_wallet(player_name)
+        # Initialize session tracking
+        wallet['session_start_balance'] = wallet['balance']
+        wallet['session_winnings'] = 0
         self._wallet_cache[player_name] = wallet.copy()
         return wallet
     
@@ -48,10 +51,18 @@ class WalletManager:
         """Update wallet cache with new values."""
         if player_name not in self._wallet_cache:
             self._wallet_cache[player_name] = self.db.get_wallet(player_name)
+            # Initialize session tracking
+            self._wallet_cache[player_name]['session_start_balance'] = self._wallet_cache[player_name]['balance']
         
         # Update the cached values
         for key, value in updates.items():
             self._wallet_cache[player_name][key] = value
+        
+        # Calculate session winnings as difference from session start
+        if 'balance' in updates:
+            session_start = self._wallet_cache[player_name].get('session_start_balance', updates['balance'])
+            current_balance = updates['balance']
+            self._wallet_cache[player_name]['session_winnings'] = current_balance - session_start
         
         # Update last activity
         self._wallet_cache[player_name]['last_activity'] = time.time()
@@ -91,18 +102,20 @@ class WalletManager:
                 f"Manual save: ${old_balance} -> ${new_balance}"
             )
             
-            # Update game stats if needed
-            winnings_change = wallet.get('session_winnings', 0)
-            if winnings_change != 0:
-                self.db.update_game_stats(player_name, winnings_change)
-                # Reset session winnings after save
-                wallet['session_winnings'] = 0
+            # Update game stats with the actual balance change (not session total)
+            balance_change = new_balance - old_balance
+            if balance_change != 0:
+                self.db.update_game_stats(player_name, balance_change)
+            
+            # Reset session tracking after save
+            wallet['session_winnings'] = 0
+            wallet['session_start_balance'] = new_balance
             
             # Update cache with fresh database state to clear "unsaved" status
             updated_wallet = self.db.get_wallet(player_name)
-            # Preserve session winnings if we didn't save them
-            if 'session_winnings' in wallet and winnings_change == 0:
-                updated_wallet['session_winnings'] = wallet['session_winnings']
+            # Restore session tracking
+            updated_wallet['session_winnings'] = 0
+            updated_wallet['session_start_balance'] = new_balance
             self._wallet_cache[player_name] = updated_wallet
             
             logging.info(f"Wallet saved for {player_name}: ${new_balance}")
@@ -123,53 +136,16 @@ class WalletManager:
         return saved_count
     
     def get_player_chips_for_game(self, player_name: str, buy_in: int = 200) -> int:
-        """Get all chips from wallet for a player to enter a game (in-memory only)."""
-        logging.debug(f"WalletManager.get_player_chips_for_game: player={player_name}")
-        
+        """DEPRECATED: Get player wallet balance for game (no longer transfers chips)."""
+        logging.debug(f"DEPRECATED: get_player_chips_for_game called for {player_name}")
         wallet = self.get_player_wallet(player_name)
-        logging.debug(f"Player {player_name} wallet balance: ${wallet['balance']}")
-        
-        # Use entire wallet balance as chips
-        chips = wallet['balance']
-        
-        if chips < 1:
-            # Add minimum funds if completely broke (in memory)
-            logging.debug(f"Player {player_name} broke, adding minimum starting funds")
-            self._update_cache(player_name, balance=500)
-            chips = 500
-        
-        # Prevent excessive chip amounts that might indicate corruption
-        if chips > 100000:  # Alert on amounts larger than $100,000
-            logging.warning(f"SUSPICIOUS CHIP AMOUNT for {player_name}: ${chips}. Capping at $100,000")
-            chips = 100000
-            self._update_cache(player_name, balance=100000)
-        
-        logging.debug(f"Player {player_name} bringing all ${chips} into game")
-        
-        # Transfer entire wallet to game chips (set wallet to 0 in memory)
-        self._update_cache(player_name, balance=0)
-        logging.debug(f"Wallet emptied for {player_name}, all ${chips} now in game (in memory)")
-        
-        return chips
+        return wallet['balance']
     
     def return_chips_to_wallet(self, player_name: str, chips: int, 
                               round_id: Optional[str] = None, winnings: int = 0) -> None:
-        """Return chips to player's wallet after a game (in-memory only)."""
-        wallet = self.get_player_wallet(player_name)
-        new_balance = wallet['balance'] + chips
-        
-        # Track session winnings for later database save
-        session_winnings = wallet.get('session_winnings', 0) + winnings
-        
-        # Update in-memory cache
-        self._update_cache(
-            player_name, 
-            balance=new_balance,
-            session_winnings=session_winnings
-        )
-        
-        logging.debug(f"Returned ${chips} to {player_name}'s wallet (winnings: ${winnings})")
-        logging.debug(f"New balance: ${new_balance} (in memory)")
+        """DEPRECATED: Wallet and chips are now unified - no transfer needed."""
+        logging.debug(f"DEPRECATED: return_chips_to_wallet called for {player_name} with ${chips}")
+        # Do nothing - wallet balance is already updated in real-time
     
     def add_funds(self, player_name: str, amount: int, 
                  reason: str = "Manual add") -> Dict[str, Any]:
@@ -258,10 +234,24 @@ class WalletManager:
         has_unsaved = self._has_unsaved_changes(player_name)
         unsaved_indicator = f" {Colors.YELLOW}(UNSAVED){Colors.RESET}" if has_unsaved else ""
         
+        # Sanity check the balance to prevent displaying corruption
+        balance = wallet['balance']
+        if balance > 1000000:  # If balance is over $1M, likely corruption
+            logging.warning(f"Suspicious wallet balance for {player_name}: ${balance}")
+            balance = min(balance, 100000)  # Cap display at $100k
+            wallet['balance'] = balance  # Fix the cached value
+        
+        # Debug: Check if player is currently in a game with different chip count
+        # If so, show that information to help with debugging
+        debug_info = ""
+        game_entry_amount = wallet.get('game_entry_amount', 0)
+        if game_entry_amount > 0:
+            debug_info = f"\n{Colors.DIM}🎮 Currently in game (brought ${game_entry_amount} chips){Colors.RESET}"
+        
         output = []
         output.append(f"{Colors.BOLD}{Colors.GREEN}💰 Wallet for {player_name}{unsaved_indicator}{Colors.RESET}")
         output.append("=" * 40)
-        output.append(f"💵 Balance: {Colors.BOLD}{Colors.CYAN}${wallet['balance']}{Colors.RESET}")
+        output.append(f"💵 Balance: {Colors.BOLD}{Colors.CYAN}${balance}{Colors.RESET}{debug_info}")
         output.append(f"🎮 Games Played: {wallet['games_played']}")
         output.append(f"📈 Total Winnings: {Colors.GREEN}${wallet['total_winnings']}{Colors.RESET}")
         output.append(f"📉 Total Losses: {Colors.RED}${wallet['total_losses']}{Colors.RESET}")

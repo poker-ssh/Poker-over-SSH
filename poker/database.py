@@ -304,16 +304,18 @@ class DatabaseManager:
     def update_game_stats(self, player_name: str, winnings_change: int = 0) -> None:
         """Update player's game statistics."""
         with self.get_cursor() as cursor:
-            # Update games played count
+            # Update games played count and stats
+            winnings_to_add = max(0, winnings_change)  # Only positive changes
+            losses_to_add = abs(min(0, winnings_change))  # Only negative changes, made positive
+            
             cursor.execute("""
                 UPDATE wallets 
                 SET games_played = games_played + 1,
-                    total_winnings = total_winnings + CASE WHEN ? > 0 THEN ? ELSE 0 END,
-                    total_losses = total_losses + CASE WHEN ? < 0 THEN ABS(?) ELSE 0 END,
+                    total_winnings = total_winnings + ?,
+                    total_losses = total_losses + ?,
                     last_activity = ?
                 WHERE player_name = ?
-            """, (winnings_change, winnings_change, winnings_change, winnings_change, 
-                  time.time(), player_name))
+            """, (winnings_to_add, losses_to_add, time.time(), player_name))
     
     def get_leaderboard(self, limit: int = 10) -> List[Dict[str, Any]]:
         """Get top players by total winnings."""

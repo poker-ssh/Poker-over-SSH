@@ -62,14 +62,20 @@ class PlayerManager:
             logging.debug(f"Player {name} already exists, returning existing player")
             return existing
         
-        # Get chips from wallet for human players
+        # Get chips from wallet for human players (just read balance, don't transfer)
         if not is_ai:
             try:
                 from poker.wallet import get_wallet_manager
                 wallet_manager = get_wallet_manager()
-                logging.debug(f"Getting all wallet funds for human player {name}")
-                chips = wallet_manager.get_player_chips_for_game(name)  # No buy_in parameter needed
-                logging.debug(f"Player {name} has {chips} chips from entire wallet")
+                wallet = wallet_manager.get_player_wallet(name)
+                chips = wallet['balance']
+                logging.debug(f"Player {name} has ${chips} chips in wallet")
+                
+                # Ensure minimum balance
+                if chips < 1:
+                    logging.debug(f"Player {name} has insufficient funds, adding minimum")
+                    wallet_manager.add_funds(name, 500, "Minimum balance top-up")
+                    chips = 500
             except ImportError:
                 # Fallback if wallet system not available
                 logging.debug("Wallet system not available, using default chips")
@@ -118,7 +124,7 @@ class PlayerManager:
         return None
     
     def finish_round(self):
-        """Handle end of round - return chips to wallets and log results."""
+        """Handle end of round - update wallet balances and log results."""
         try:
             from poker.wallet import get_wallet_manager
             from poker.database import get_database
@@ -127,30 +133,64 @@ class PlayerManager:
             
             for player in self.players:
                 if not player.is_ai and player.round_id:
-                    # Human player - return chips to wallet
-                    winnings = player.get_winnings()
-                    wallet_manager.return_chips_to_wallet(
-                        player.name, player.chips, player.round_id, winnings
-                    )
+                    # Human player - update wallet balance to match current chips
+                    # The wallet balance IS the chips - no transfer needed
+                    wallet_manager._update_cache(player.name, balance=player.chips)
                     
-                    # Log final result
+                    # Log final result with round winnings
+                    round_winnings = player.get_winnings()
                     db.log_action(
                         player.name, self.room_code, "ROUND_FINISHED", player.chips,
                         round_id=player.round_id,
-                        details=f"Round ended with ${player.chips} chips (${winnings:+} change)"
+                        details=f"Round ended with ${player.chips} chips (round winnings: ${round_winnings:+})"
                     )
                 elif player.is_ai:
-                    # AI player - check if broke and mark for respawn
+                    # AI player - check if broke and respawn/reset chips instead of removing
                     if player.chips <= 0:
-                        logging.info(f"AI player {player.name} went broke, marking for respawn")
-                        db.mark_ai_broke(player.name)
-                        # Remove broke AI from player list
-                        self.players.remove(player)
-                        logging.info(f"Removed broke AI {player.name} from player list")
+                        logging.info(f"AI player {player.name} went broke, respawning/resetting chips")
+                        try:
+                            db.mark_ai_broke(player.name)
+                        except Exception:
+                            logging.debug(f"Failed to mark AI {player.name} as broke in DB")
+
+                        # Reset AI chips to a default value instead of removing them
+                        default_ai_chips = 200
+                        player.chips = default_ai_chips
+                        player.rebuys = (player.rebuys or 0) + 1
+                        player.state = 'active'
+                        player.initial_chips = default_ai_chips
+                        player.round_id = str(uuid.uuid4())
+
+                        # Log respawn action for visibility
+                        try:
+                            db.log_action(
+                                player.name, self.room_code, "AI_RESPAWN", player.chips,
+                                round_id=player.round_id,
+                                details=f"AI respawned with ${player.chips} chips"
+                            )
+                        except Exception:
+                            logging.debug(f"Failed to log AI respawn for {player.name}")
+
+                        logging.info(f"Respawned AI {player.name} with ${player.chips} chips (rebuys={player.rebuys})")
         except ImportError:
             # Fallback if wallet/database system not available
             pass
     
+    def sync_wallet_balance(self, player_name: str):
+        """Sync a human player's wallet balance with their current chips."""
+        player = next((p for p in self.players if p.name == player_name), None)
+        if not player or player.is_ai:
+            return
+        
+        try:
+            from poker.wallet import get_wallet_manager
+            wallet_manager = get_wallet_manager()
+            # Update wallet balance to match current chips
+            wallet_manager._update_cache(player_name, balance=player.chips)
+            logging.debug(f"Synced wallet balance for {player_name}: ${player.chips}")
+        except Exception as e:
+            logging.error(f"Failed to sync wallet for {player_name}: {e}")
+
     def log_player_action(self, player_name: str, action_type: str, amount: int = 0, 
                          game_phase: Optional[str] = None, details: Optional[str] = None):
         """Log a player action to the database."""
