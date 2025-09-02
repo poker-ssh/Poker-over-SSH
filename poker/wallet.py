@@ -51,7 +51,12 @@ class WalletManager:
         
         # Update the cached values
         for key, value in updates.items():
-            self._wallet_cache[player_name][key] = value
+            if key == 'session_winnings':
+                # Accumulate session winnings instead of replacing
+                current_session = self._wallet_cache[player_name].get('session_winnings', 0)
+                self._wallet_cache[player_name][key] = current_session + value
+            else:
+                self._wallet_cache[player_name][key] = value
         
         # Update last activity
         self._wallet_cache[player_name]['last_activity'] = time.time()
@@ -91,12 +96,11 @@ class WalletManager:
                 f"Manual save: ${old_balance} -> ${new_balance}"
             )
             
-            # Update game stats if needed
+            # Update game stats
             winnings_change = wallet.get('session_winnings', 0)
-            if winnings_change != 0:
-                self.db.update_game_stats(player_name, winnings_change)
-                # Reset session winnings after save
-                wallet['session_winnings'] = 0
+            self.db.update_game_stats(player_name, winnings_change)
+            # Reset session winnings after save
+            wallet['session_winnings'] = 0
             
             # Update cache with fresh database state to clear "unsaved" status
             updated_wallet = self.db.get_wallet(player_name)

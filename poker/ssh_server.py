@@ -372,7 +372,6 @@ class RoomSession:
             self._stdout.write("  wallet add           - Claim hourly bonus ($150, once per hour)\r\n")
             self._stdout.write("  wallet save          - Save wallet changes to database\r\n")
             self._stdout.write("  wallet saveall       - Save all wallets (admin only)\r\n")
-            self._stdout.write("  wallet debug         - Show wallet cache vs database state\r\n")
             self._stdout.write("\r\n🏠 Room Commands:\r\n")
             self._stdout.write("  roomctl list           - List all rooms\r\n")
             self._stdout.write("  roomctl create [name]  - Create a new room\r\n")
@@ -873,49 +872,10 @@ class RoomSession:
                             self._stdout.write("\r\n❯ ")
                 else:
                     self._stdout.write(f"❌ Admin privileges required for audit command\r\n\r\n❯ ")
-            
-            elif subcmd == "debug":
-                # Debug command to show both cache and database state for troubleshooting
-                from poker.database import get_database
-                db = get_database()
-                wallet_manager = get_wallet_manager()
-                
-                # Get cached wallet state
-                cached_wallet = wallet_manager.get_player_wallet(self._username)
-                
-                # Get database wallet state
-                db_wallet = db.get_wallet(self._username)
-                
-                self._stdout.write(f"🔍 Wallet Debug for {self._username}:\r\n")
-                self._stdout.write("=" * 50 + "\r\n")
-                self._stdout.write(f"📱 CACHED STATE:\r\n")
-                self._stdout.write(f"  Balance: ${cached_wallet['balance']}\r\n")
-                self._stdout.write(f"  Session Winnings: ${cached_wallet.get('session_winnings', 0)}\r\n")
-                self._stdout.write(f"  Game Entry Amount: ${cached_wallet.get('game_entry_amount', 0)}\r\n")
-                self._stdout.write(f"  Games Played: {cached_wallet['games_played']}\r\n")
-                
-                self._stdout.write(f"\r\n💾 DATABASE STATE:\r\n")
-                self._stdout.write(f"  Balance: ${db_wallet['balance']}\r\n")
-                self._stdout.write(f"  Games Played: {db_wallet['games_played']}\r\n")
-                self._stdout.write(f"  Total Winnings: ${db_wallet['total_winnings']}\r\n")
-                self._stdout.write(f"  Total Losses: ${db_wallet['total_losses']}\r\n")
-                
-                # Check for inconsistencies
-                balance_diff = cached_wallet['balance'] - db_wallet['balance']
-                if balance_diff != 0:
-                    self._stdout.write(f"\r\n⚠️  BALANCE MISMATCH: ${balance_diff:+} difference!\r\n")
-                else:
-                    self._stdout.write(f"\r\n✅ Balance is consistent\r\n")
-                
-                # Show if unsaved changes exist
-                has_unsaved = wallet_manager._has_unsaved_changes(self._username)
-                self._stdout.write(f"💾 Has unsaved changes: {'Yes' if has_unsaved else 'No'}\r\n")
-                
-                self._stdout.write("\r\n❯ ")
                         
             else:
                 self._stdout.write(f"❌ Unknown wallet command: {subcmd}\r\n")
-                self._stdout.write("💡 Available: history, actions, leaderboard, add, save, saveall, check, audit, debug\r\n\r\n❯ ")
+                self._stdout.write("💡 Available: history, actions, leaderboard, add, save, saveall, check, audit\r\n\r\n❯ ")
             
             await self._stdout.drain()
             
@@ -1466,7 +1426,7 @@ class RoomSession:
                 try:
                     from poker.game import Game
                     logging.debug("Creating game instance")
-                    game = Game(players, player_manager=room.pm)  # Pass PlayerManager for wallet syncing
+                    game = Game(players)  # Pass only players as required
                     
                     logging.debug("Starting game round")
                     result = await game.start_round()
