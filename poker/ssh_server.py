@@ -1946,7 +1946,7 @@ if asyncssh:
 
             ip_info = f" from {peer_ip}:{peer_port}" if peer_ip and peer_port else ""
             if username == "healthcheck":
-                # Allow the special healthcheck user to proceed without auth (used by health cheak)
+                # Allow the special healthcheck user to proceed without auth (used by health probes)
                 logging.debug(f"Begin auth for user: {username}{ip_info} (healthcheck - no auth required)")
                 return False
             else:
