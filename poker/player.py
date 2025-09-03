@@ -138,7 +138,9 @@ class PlayerManager:
                     wallet_manager._update_cache(player.name, balance=player.chips)
                     
                     # Auto-save wallet to database after each game
-                    success = wallet_manager.save_wallet_to_database(player.name)
+                    success = wallet_manager.save_wallet_to_database(
+                        player.name, 'GAME_RESULT', 'Auto-save after game'
+                    )
                     if success:
                         logging.info(f"Auto-saved wallet for {player.name} after round completion")
                     else:
