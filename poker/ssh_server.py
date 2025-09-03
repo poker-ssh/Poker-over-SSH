@@ -1846,8 +1846,10 @@ _current_ssh_username = 'guest'
 # SSH server classes
 if asyncssh:
     class _RoomSSHSession(RoomSession, asyncssh.SSHServerSession):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, username=_current_ssh_username, **kwargs)
+        def __init__(self, stdin, stdout, stderr, server_state=None, username=None, **kwargs):
+            # Pass the authenticated username from asyncssh into RoomSession.
+            # Avoid relying on the module-level _current_ssh_username which causes races.
+            super().__init__(stdin, stdout, stderr, server_state=server_state, username=username)
 
     class _RoomSSHServer(asyncssh.SSHServer):            
         def password_auth_supported(self):
@@ -1859,6 +1861,12 @@ if asyncssh:
         def public_key_auth(self, username, key):
             """Verify SSH public key authentication using the key sent by client."""
             try:
+                logging.debug(f"public_key_auth called for username={username}, key_obj={repr(key)}")
+                try:
+                    has_export = hasattr(key, 'export_public_key')
+                    logging.debug(f"Key object has export_public_key: {has_export}")
+                except Exception:
+                    logging.exception("Error inspecting key object")
                 from poker.database import get_database
                 
                 # Get the database instance
@@ -1871,6 +1879,7 @@ if asyncssh:
                 else:
                     # Already a string
                     key_str = str(key).strip()
+                logging.debug(f"Converted offered key to string: {key_str[:200]}")
                 
                 # Extract key type and comment from the key string
                 key_parts = key_str.split()
@@ -1885,6 +1894,7 @@ if asyncssh:
                 
                 # Check if this username already has any registered keys
                 existing_keys = db.get_authorized_keys(username)
+                logging.debug(f"Existing keys for {username}: {len(existing_keys)}")
                 
                 if not existing_keys:
                     # First time this username is connecting - register this key
@@ -1921,25 +1931,29 @@ if asyncssh:
             return False
 
         def begin_auth(self, username):
-            global _current_ssh_username
-            # Try to get the peer IP/port from the transport
-            peer_ip = peer_port = None
+            # Called when auth begins for a username. We log the attempt here but
+            # do not set any global state. The session factory receives the
+            # authenticated username from asyncssh and will pass it to RoomSession.
             try:
+                peer_ip = peer_port = None
                 transport = getattr(self, '_transport', None)
                 if transport is not None:
                     peer = transport.get_extra_info('peername')
                     if peer:
                         peer_ip, peer_port = peer[0], peer[1]
             except Exception:
-                pass
+                peer_ip = peer_port = None
 
             ip_info = f" from {peer_ip}:{peer_port}" if peer_ip and peer_port else ""
             if username == "healthcheck":
-                logging.debug(f"Accepting connection for user: {username}{ip_info}")
+                # Allow the special healthcheck user to proceed without auth (used by health cheak)
+                logging.debug(f"Begin auth for user: {username}{ip_info} (healthcheck - no auth required)")
+                return False
             else:
-                logging.info(f"Accepting connection for user: {username}{ip_info}")
-            _current_ssh_username = username
-            return ""
+                # For all other usernames, require authentication (e.g. public-key).
+                logging.info(f"Begin auth for user: {username}{ip_info} - authentication required")
+                # Returning True signals asyncssh that authentication is required.
+                return True
 else:
     _RoomSSHSession = RoomSession  # type: ignore
     _RoomSSHServer = object  # type: ignore
@@ -1984,7 +1998,11 @@ class SSHServer:
         self._server_state = RoomServerState()
 
         def session_factory(stdin, stdout, stderr, **kwargs):
-            return _RoomSSHSession(stdin, stdout, stderr, server_state=self._server_state)
+            # asyncssh passes an authenticated 'username' in kwargs when creating
+            # the session. Forward that into our RoomSession wrapper so the
+            # session has the correct, verified username (avoids impersonation).
+            username = kwargs.get('username') or kwargs.get('peer_username')
+            return _RoomSSHSession(stdin, stdout, stderr, server_state=self._server_state, username=username)
 
         # Create server
         self._server = await asyncssh.create_server(
