@@ -120,12 +120,28 @@ class DatabaseManager:
                 )
             """)
             
+            # SSH keys table - stores authorised public keys for users
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS ssh_keys (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT NOT NULL,
+                    public_key TEXT NOT NULL,
+                    key_type TEXT NOT NULL,
+                    key_comment TEXT,
+                    registered_at REAL NOT NULL,
+                    last_used REAL NOT NULL DEFAULT 0,
+                    UNIQUE(username, public_key)
+                )
+            """)
+            
             # Create indexes for better performance
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_actions_player ON actions (player_name)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_actions_timestamp ON actions (timestamp)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_transactions_player ON transactions (player_name)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_wallets_activity ON wallets (last_activity)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_daily_bonuses_player ON daily_bonuses (player_name)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_ssh_keys_username ON ssh_keys (username)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_ssh_keys_public_key ON ssh_keys (public_key)")
             # Healthcheck history table - stores recent probe results for health UI
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS health_history (
@@ -507,6 +523,78 @@ class DatabaseManager:
                         probe = None
                     result.append({'ts': row['ts'], 'status': row['status'], 'probe': probe, 'created_at': row['created_at']})
                 return result
+
+    # -------------------- SSH Key Management Methods --------------------
+
+    def register_ssh_key(self, username: str, public_key: str, key_type: str, key_comment: str = "") -> bool:
+        """Register a new SSH public key for a user."""
+        try:
+            with self.get_cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO ssh_keys 
+                    (username, public_key, key_type, key_comment, registered_at)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (username, public_key, key_type, key_comment, time.time()))
+                return True
+        except sqlite3.IntegrityError:
+            # Key already registered for this user
+            return False
+        except Exception as e:
+            logging.error(f"Error registering SSH key for {username}: {e}")
+            return False
+
+    def get_authorized_keys(self, username: str) -> List[Dict[str, Any]]:
+        """Get all authorized SSH keys for a user."""
+        with self.get_cursor() as cursor:
+            cursor.execute("""
+                SELECT * FROM ssh_keys 
+                WHERE username = ? 
+                ORDER BY registered_at DESC
+            """, (username,))
+            
+            return [dict(row) for row in cursor.fetchall()]
+
+    def is_key_authorized(self, username: str, public_key: str) -> bool:
+        """Check if a public key is authorized for a user."""
+        with self.get_cursor() as cursor:
+            cursor.execute("""
+                SELECT COUNT(*) as count FROM ssh_keys 
+                WHERE username = ? AND public_key = ?
+            """, (username, public_key))
+            
+            result = cursor.fetchone()
+            return result['count'] > 0
+
+    def update_key_last_used(self, username: str, public_key: str) -> None:
+        """Update the last used timestamp for a key."""
+        with self.get_cursor() as cursor:
+            cursor.execute("""
+                UPDATE ssh_keys 
+                SET last_used = ? 
+                WHERE username = ? AND public_key = ?
+            """, (time.time(), username, public_key))
+
+    def remove_ssh_key(self, username: str, public_key: str) -> bool:
+        """Remove an SSH key for a user."""
+        with self.get_cursor() as cursor:
+            cursor.execute("""
+                DELETE FROM ssh_keys 
+                WHERE username = ? AND public_key = ?
+            """, (username, public_key))
+            
+            return cursor.rowcount > 0
+
+    def get_all_ssh_keys(self) -> List[Dict[str, Any]]:
+        """Get all SSH keys (for admin purposes)."""
+        with self.get_cursor() as cursor:
+            cursor.execute("SELECT * FROM ssh_keys ORDER BY username, registered_at DESC")
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_users_with_keys(self) -> List[str]:
+        """Get list of all users who have registered SSH keys."""
+        with self.get_cursor() as cursor:
+            cursor.execute("SELECT DISTINCT username FROM ssh_keys ORDER BY username")
+            return [row['username'] for row in cursor.fetchall()]
 
 
     def can_claim_bonus(self, player_name: str) -> Tuple[bool, str]:

@@ -305,6 +305,21 @@ class RoomSession:
             await self._handle_wallet_command(cmd)
             return
 
+        if cmd.lower().startswith("registerkey"):
+            logging.debug(f"User {self._username} registering SSH key")
+            await self._handle_register_key(cmd)
+            return
+
+        if cmd.lower().startswith("listkeys"):
+            logging.debug(f"User {self._username} listing SSH keys")
+            await self._handle_list_keys(cmd)
+            return
+
+        if cmd.lower().startswith("removekey"):
+            logging.debug(f"User {self._username} removing SSH key")
+            await self._handle_remove_key(cmd)
+            return
+
         if cmd.lower() in ("togglecards", "tgc"):
             logging.debug(f"User {self._username} toggling card visibility")
             await self._handle_toggle_cards()
@@ -354,44 +369,52 @@ class RoomSession:
         """Show help information."""
         try:
             self._stdout.write("🎰 Poker-over-SSH Commands:\r\n")
-            self._stdout.write("  help     Show this help\r\n")
-            self._stdout.write("  whoami   Show connection info\r\n")
-            self._stdout.write("  server   Show server information\r\n")
-            self._stdout.write("  seat     Claim a seat using your SSH username\r\n")
-            self._stdout.write("  players  List all players in current room\r\n")
-            self._stdout.write("  start    Start a poker round (requires 1+ human players)\r\n")
-            self._stdout.write("  wallet   Show your wallet balance and stats\r\n")
-            self._stdout.write("  roomctl  Room management commands\r\n")
-            self._stdout.write("  togglecards / tgc  - Toggle card visibility for privacy\r\n")
-            self._stdout.write("  quit     Disconnect\r\n")
+            self._stdout.write("   help     Show this help\r\n")
+            self._stdout.write("   whoami   Show connection info\r\n")
+            self._stdout.write("   server   Show server information\r\n")
+            self._stdout.write("   seat     Claim a seat using your SSH username\r\n")
+            self._stdout.write("   players  List all players in current room\r\n")
+            self._stdout.write("   start    Start a poker round (requires 1+ human players)\r\n")
+            self._stdout.write("   wallet   Show your wallet balance and stats\r\n")
+            self._stdout.write("   roomctl  Room management commands\r\n")
+            self._stdout.write("   registerkey  Register SSH public key for authentication\r\n")
+            self._stdout.write("   listkeys     List your registered SSH keys\r\n")
+            self._stdout.write("   removekey    Remove an SSH key\r\n")
+            self._stdout.write("   togglecards / tgc  - Toggle card visibility for privacy\r\n")
+            self._stdout.write("   quit     Disconnect\r\n")
             self._stdout.write("\r\n💰 Wallet Commands:\r\n")
-            self._stdout.write("  wallet               - Show wallet balance and stats\r\n")
-            self._stdout.write("  wallet history       - Show transaction history\r\n")
-            self._stdout.write("  wallet actions       - Show recent game actions\r\n")
-            self._stdout.write("  wallet leaderboard   - Show top players\r\n")
-            self._stdout.write("  wallet add           - Claim hourly bonus ($150, once per hour)\r\n")
-            self._stdout.write("  wallet save          - Save wallet changes to database\r\n")
-            self._stdout.write("  wallet saveall       - Save all wallets (admin only)\r\n")
+            self._stdout.write("   wallet               - Show wallet balance and stats\r\n")
+            self._stdout.write("   wallet history       - Show transaction history\r\n")
+            self._stdout.write("   wallet actions       - Show recent game actions\r\n")
+            self._stdout.write("   wallet leaderboard   - Show top players\r\n")
+            self._stdout.write("   wallet add           - Claim hourly bonus ($150, once per hour)\r\n")
+            self._stdout.write("   wallet save          - Save wallet changes to database\r\n")
+            self._stdout.write("   wallet saveall       - Save all wallets (admin only)\r\n")
             self._stdout.write("\r\n🏠 Room Commands:\r\n")
-            self._stdout.write("  roomctl list           - List all rooms\r\n")
-            self._stdout.write("  roomctl create [name]  - Create a new room\r\n")
-            self._stdout.write("  roomctl join <code>    - Join a room by code\r\n")
-            self._stdout.write("  roomctl info           - Show current room info\r\n")
-            self._stdout.write("  roomctl share          - Share current room code\r\n")
-            self._stdout.write("  roomctl extend         - Extend current room by 30 minutes\r\n")
-            self._stdout.write("  roomctl delete         - Delete current room (creator only)\r\n")
+            self._stdout.write("   roomctl list           - List all rooms\r\n")
+            self._stdout.write("   roomctl create [name]  - Create a new room\r\n")
+            self._stdout.write("   roomctl join <code>    - Join a room by code\r\n")
+            self._stdout.write("   roomctl info           - Show current room info\r\n")
+            self._stdout.write("   roomctl share          - Share current room code\r\n")
+            self._stdout.write("   roomctl extend         - Extend current room by 30 minutes\r\n")
+            self._stdout.write("   roomctl delete         - Delete current room (creator only)\r\n")
             self._stdout.write("\r\n🎮 Game Commands:\r\n")
-            self._stdout.write("  togglecards / tgc  - Toggle card visibility for privacy\r\n")
-            self._stdout.write("  togglecards            - Toggle card visibility on/off\r\n")
+            self._stdout.write("   togglecards / tgc  - Toggle card visibility for privacy\r\n")
+            self._stdout.write("   togglecards            - Toggle card visibility on/off\r\n")
+            self._stdout.write("\r\n🔑 SSH Key Commands:\r\n")
+            self._stdout.write("   registerkey <key>  Register SSH public key for authentication\r\n")
+            self._stdout.write("   listkeys           List your registered SSH keys\r\n")
+            self._stdout.write("   removekey <id>     Remove an SSH key by ID\r\n")
             self._stdout.write("\r\n💡 Tips:\r\n")
-            self._stdout.write("  - Your wallet persists across server restarts\r\n")
-            self._stdout.write("  - All actions are logged to the database\r\n")
-            self._stdout.write("  - Rooms expire after 30 minutes unless extended\r\n")
-            self._stdout.write("  - The default room never expires\r\n")
-            self._stdout.write("  - Room codes are private and only visible to creators and members\r\n")
-            self._stdout.write("  - Use 'roomctl share' to get your room's code to share with friends\r\n")
-            self._stdout.write("  - Hide/show cards for privacy when streaming or when others can see your screen\r\n")
-            self._stdout.write("  - Card visibility can be toggled by clicking the button or using commands\r\n")
+            self._stdout.write("   - Your wallet persists across server restarts\r\n")
+            self._stdout.write("   - All actions are logged to the database\r\n")
+            self._stdout.write("   - Rooms expire after 30 minutes unless extended\r\n")
+            self._stdout.write("   - The default room never expires\r\n")
+            self._stdout.write("   - Room codes are private and only visible to creators and members\r\n")
+            self._stdout.write("   - Use 'roomctl share' to get your room's code to share with friends\r\n")
+            self._stdout.write("   - Hide/show cards for privacy when streaming or when others can see your screen\r\n")
+            self._stdout.write("   - Card visibility can be toggled by clicking the button or using commands\r\n")
+            self._stdout.write("   - Register your SSH key to prevent impersonation: registerkey <your_key>\r\n")
             self._stdout.write("\r\n❯ ")
             await self._stdout.drain()
         except Exception:
@@ -881,6 +904,179 @@ class RoomSession:
             
         except Exception as e:
             self._stdout.write(f"❌ Error in wallet command: {e}\r\n\r\n❯ ")
+            await self._stdout.drain()
+
+    async def _handle_register_key(self, cmd: str):
+        """Handle SSH key registration."""
+        try:
+            if not self._username:
+                self._stdout.write("❌ Username required for key registration\r\n\r\n❯ ")
+                await self._stdout.drain()
+                return
+            
+            parts = cmd.split()
+            if len(parts) < 2:
+                self._stdout.write("❌ Usage: registerkey <public_key>\r\n")
+                self._stdout.write("💡 Example: registerkey ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ... user@host\r\n")
+                self._stdout.write("💡 To get your public key: cat ~/.ssh/id_rsa.pub\r\n\r\n❯ ")
+                await self._stdout.drain()
+                return
+            
+            # Join all parts after "registerkey" to handle keys with spaces
+            key_str = " ".join(parts[1:])
+            
+            # Basic validation of SSH key format
+            if not key_str.startswith(('ssh-rsa', 'ssh-ed25519', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521')):
+                self._stdout.write("❌ Invalid SSH key format. Key must start with ssh-rsa, ssh-ed25519, or ecdsa-sha2-nistp*\r\n\r\n❯ ")
+                await self._stdout.drain()
+                return
+            
+            # Parse key components
+            key_parts = key_str.split()
+            if len(key_parts) < 2:
+                self._stdout.write("❌ Invalid SSH key format. Expected: <type> <key_data> [comment]\r\n\r\n❯ ")
+                await self._stdout.drain()
+                return
+            
+            key_type = key_parts[0]
+            key_data = key_parts[1]
+            key_comment = " ".join(key_parts[2:]) if len(key_parts) > 2 else ""
+            
+            # Validate base64 key data
+            import base64
+            try:
+                base64.b64decode(key_data)
+            except Exception:
+                self._stdout.write("❌ Invalid SSH key data. Key data must be valid base64\r\n\r\n❯ ")
+                await self._stdout.drain()
+                return
+            
+            from poker.database import get_database
+            db = get_database()
+            
+            # Check if key is already registered for this user
+            if db.is_key_authorized(self._username, key_str):
+                self._stdout.write("⚠️  This SSH key is already registered for your account\r\n\r\n❯ ")
+                await self._stdout.drain()
+                return
+            
+            # Register the key
+            success = db.register_ssh_key(self._username, key_str, key_type, key_comment)
+            
+            if success:
+                self._stdout.write("✅ SSH key registered successfully!\r\n")
+                self._stdout.write(f"🔑 Key Type: {key_type}\r\n")
+                if key_comment:
+                    self._stdout.write(f"📝 Comment: {key_comment}\r\n")
+                self._stdout.write("💡 You can now authenticate using this key: ssh <your_username>@<server>\r\n")
+                self._stdout.write("💡 Use 'listkeys' to see all your registered keys\r\n\r\n❯ ")
+            else:
+                self._stdout.write("❌ Failed to register SSH key. It may already be registered\r\n\r\n❯ ")
+            
+            await self._stdout.drain()
+            
+        except Exception as e:
+            self._stdout.write(f"❌ Error registering SSH key: {e}\r\n\r\n❯ ")
+            await self._stdout.drain()
+
+    async def _handle_list_keys(self, cmd: str):
+        """Handle listing SSH keys for the current user."""
+        try:
+            if not self._username:
+                self._stdout.write("❌ Username required to list keys\r\n\r\n❯ ")
+                await self._stdout.drain()
+                return
+            
+            from poker.database import get_database
+            db = get_database()
+            
+            keys = db.get_authorized_keys(self._username)
+            
+            if not keys:
+                self._stdout.write("🔑 No SSH keys registered for your account\r\n")
+                self._stdout.write("💡 Use 'registerkey <your_public_key>' to register your first key\r\n")
+                self._stdout.write("💡 Get your public key with: cat ~/.ssh/id_rsa.pub\r\n\r\n❯ ")
+            else:
+                self._stdout.write(f"{Colors.BOLD}{Colors.CYAN}🔑 Your SSH Keys ({len(keys)} registered){Colors.RESET}\r\n")
+                self._stdout.write("=" * 60 + "\r\n")
+                
+                for i, key in enumerate(keys, 1):
+                    import time
+                    registered = time.strftime("%Y-%m-%d %H:%M", time.localtime(key['registered_at']))
+                    last_used = time.strftime("%Y-%m-%d %H:%M", time.localtime(key['last_used'])) if key['last_used'] > 0 else "Never"
+                    
+                    self._stdout.write(f"{i}. {Colors.BOLD}{key['key_type']}{Colors.RESET}")
+                    if key['key_comment']:
+                        self._stdout.write(f" ({key['key_comment']})")
+                    self._stdout.write("\r\n")
+                    self._stdout.write(f"   📅 Registered: {registered}\r\n")
+                    self._stdout.write(f"   🕒 Last Used: {last_used}\r\n")
+                    self._stdout.write(f"   🔢 Key ID: {key['id']}\r\n")
+                    self._stdout.write("\r\n")
+                
+                self._stdout.write("💡 Use 'removekey <key_id>' to remove a key\r\n")
+                self._stdout.write("💡 Use 'registerkey <new_key>' to add another key\r\n\r\n❯ ")
+            
+            await self._stdout.drain()
+            
+        except Exception as e:
+            self._stdout.write(f"❌ Error listing SSH keys: {e}\r\n\r\n❯ ")
+            await self._stdout.drain()
+
+    async def _handle_remove_key(self, cmd: str):
+        """Handle removing an SSH key."""
+        try:
+            if not self._username:
+                self._stdout.write("❌ Username required to remove keys\r\n\r\n❯ ")
+                await self._stdout.drain()
+                return
+            
+            parts = cmd.split()
+            if len(parts) < 2:
+                self._stdout.write("❌ Usage: removekey <key_id>\r\n")
+                self._stdout.write("💡 Use 'listkeys' to see your key IDs\r\n\r\n❯ ")
+                await self._stdout.drain()
+                return
+            
+            try:
+                key_id = int(parts[1])
+            except ValueError:
+                self._stdout.write("❌ Key ID must be a number\r\n\r\n❯ ")
+                await self._stdout.drain()
+                return
+            
+            from poker.database import get_database
+            db = get_database()
+            
+            # Get the key details first to show what we're removing
+            keys = db.get_authorized_keys(self._username)
+            key_to_remove = None
+            for key in keys:
+                if key['id'] == key_id:
+                    key_to_remove = key
+                    break
+            
+            if not key_to_remove:
+                self._stdout.write("❌ SSH key not found or doesn't belong to you\r\n\r\n❯ ")
+                await self._stdout.drain()
+                return
+            
+            # Remove the key
+            success = db.remove_ssh_key(self._username, key_to_remove['public_key'])
+            
+            if success:
+                self._stdout.write("✅ SSH key removed successfully!\r\n")
+                self._stdout.write(f"🔑 Removed: {key_to_remove['key_type']}")
+                if key_to_remove['key_comment']:
+                    self._stdout.write(f" ({key_to_remove['key_comment']})")
+                self._stdout.write("\r\n\r\n❯ ")
+            else:
+                self._stdout.write("❌ Failed to remove SSH key\r\n\r\n❯ ")
+            
+            await self._stdout.drain()
+            
+        except Exception as e:
+            self._stdout.write(f"❌ Error removing SSH key: {e}\r\n\r\n❯ ")
             await self._stdout.drain()
 
     async def _show_whoami(self):
@@ -1658,7 +1854,62 @@ if asyncssh:
             return False
 
         def public_key_auth_supported(self):
-            return False
+            return True
+
+        def public_key_auth(self, username, key):
+            """Verify SSH public key authentication using the key sent by client."""
+            try:
+                from poker.database import get_database
+                
+                # Get the database instance
+                db = get_database()
+                
+                # Convert key to string format for storage/comparison
+                if hasattr(key, 'export_public_key'):
+                    # AsyncSSH key object
+                    key_str = key.export_public_key().decode('utf-8').strip()
+                else:
+                    # Already a string
+                    key_str = str(key).strip()
+                
+                # Extract key type and comment from the key string
+                key_parts = key_str.split()
+                if len(key_parts) >= 2:
+                    key_type = key_parts[0]
+                    key_data = key_parts[1]
+                    key_comment = key_parts[2] if len(key_parts) > 2 else ""
+                else:
+                    key_type = "unknown"
+                    key_data = key_str
+                    key_comment = ""
+                
+                # Check if this username already has any registered keys
+                existing_keys = db.get_authorized_keys(username)
+                
+                if not existing_keys:
+                    # First time this username is connecting - register this key
+                    success = db.register_ssh_key(username, key_str, key_type, key_comment)
+                    if success:
+                        logging.info(f"Registered new SSH key for user: {username}")
+                        return True
+                    else:
+                        logging.error(f"Failed to register SSH key for user: {username}")
+                        return False
+                else:
+                    # Username already exists - check if this specific key is authorized
+                    if db.is_key_authorized(username, key_str):
+                        # Update last used timestamp
+                        db.update_key_last_used(username, key_str)
+                        logging.info(f"SSH key authentication successful for user: {username}")
+                        return True
+                    else:
+                        # Different key for existing username - deny access
+                        logging.warning(f"SSH key authentication failed for user: {username} - key not authorized")
+                        return False
+                    
+            except Exception as e:
+                logging.error(f"Error during SSH key authentication for {username}: {e}")
+                return False
 
         def keyboard_interactive_auth_supported(self):
             return False
