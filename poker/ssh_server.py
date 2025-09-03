@@ -1858,6 +1858,12 @@ if asyncssh:
         def public_key_auth_supported(self):
             return True
 
+        def validate_public_key(self, username, key):
+            """Validate if a public key is acceptable for the user."""
+            logging.debug(f"validate_public_key called for username={username}, key={repr(key)}")
+            # Always return True here - we'll do the actual auth check in public_key_auth
+            return True
+
         def public_key_auth(self, username, key):
             """Verify SSH public key authentication using the key sent by client."""
             try:
