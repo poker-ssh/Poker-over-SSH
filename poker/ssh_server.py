@@ -1885,7 +1885,7 @@ if asyncssh:
                 else:
                     # Already a string
                     key_str = str(key).strip()
-                logging.debug(f"Converted offered key to string: {key_str[:200]}")
+                logging.debug(f"Converted offered key to string: {key_str[:200]}...")
                 
                 # Extract key type and comment from the key string
                 key_parts = key_str.split()
@@ -1898,6 +1898,8 @@ if asyncssh:
                     key_data = key_str
                     key_comment = ""
                 
+                logging.debug(f"Parsed key: type={key_type}, comment='{key_comment}'")
+                
                 # Check if this username already has any registered keys
                 existing_keys = db.get_authorized_keys(username)
                 logging.debug(f"Existing keys for {username}: {len(existing_keys)}")
@@ -1906,29 +1908,72 @@ if asyncssh:
                     # First time this username is connecting - register this key
                     success = db.register_ssh_key(username, key_str, key_type, key_comment)
                     if success:
-                        logging.info(f"Registered new SSH key for user: {username}")
+                        logging.info(f"✅ Auto-registered new SSH key for user: {username} (type: {key_type})")
                         return True
                     else:
-                        logging.error(f"Failed to register SSH key for user: {username}")
+                        logging.error(f"❌ Failed to register SSH key for user: {username}")
                         return False
                 else:
                     # Username already exists - check if this specific key is authorized
                     if db.is_key_authorized(username, key_str):
                         # Update last used timestamp
                         db.update_key_last_used(username, key_str)
-                        logging.info(f"SSH key authentication successful for user: {username}")
+                        logging.info(f"✅ SSH key authentication successful for user: {username}")
                         return True
                     else:
                         # Different key for existing username - deny access
-                        logging.warning(f"SSH key authentication failed for user: {username} - key not authorized")
+                        logging.warning(f"❌ SSH key authentication failed for user: {username} - key not authorized (user has {len(existing_keys)} registered key(s))")
                         return False
                     
             except Exception as e:
-                logging.error(f"Error during SSH key authentication for {username}: {e}")
+                logging.error(f"❌ Error during SSH key authentication for {username}: {e}")
                 return False
 
         def keyboard_interactive_auth_supported(self):
-            return False
+            # Enable keyboard-interactive auth as a fallback for users without SSH keys
+            return True
+
+        def keyboard_interactive_auth(self, username, submethods):
+            """Handle keyboard-interactive authentication for users without SSH keys."""
+            try:
+                # This method is called when public key auth is not available
+                # We'll use this to provide helpful guidance about SSH keys
+                logging.info(f"Keyboard-interactive auth attempted for user: {username} (likely no SSH key available)")
+                
+                # Send helpful message about SSH key setup
+                prompt_text = (
+                    "\n🔑 SSH Key Authentication Required\n\n"
+                    "This server requires SSH public key authentication for security.\n"
+                    "You need to generate an SSH key pair and connect properly:\n\n"
+                    "1. Generate SSH key: ssh-keygen -t rsa -b 4096\n"
+                    "2. Connect with: ssh <username>@<host>\n\n"
+                    "Your public key will be automatically registered on first connection.\n\n"
+                    "Not working? Make sure you have:\n"
+                    "• Generated an SSH key pair (ssh-keygen)\n"
+                    "• Added your key to ssh-agent (ssh-add ~/.ssh/id_rsa)\n"
+                    "• Or specified the key: ssh -i ~/.ssh/id_rsa <username>@<host>\n\n"
+                    "Connection will be closed. Please generate an SSH key and reconnect.\n\n"
+                    "Press Enter to close connection: "
+                )
+                
+                # Create a simple prompt that will show our helpful message
+                # Return the challenge object that asyncssh will handle
+                return [(prompt_text, False)]  # (prompt, echo)
+                
+            except Exception as e:
+                logging.error(f"Error in keyboard_interactive_auth for {username}: {e}")
+                # Return empty list to deny access
+                return []
+
+        def keyboard_interactive_auth_response(self, username, responses):
+            """Handle the response to keyboard interactive auth."""
+            try:
+                # Always deny access after showing the helpful message
+                logging.info(f"Denying keyboard-interactive access for {username} - SSH key required")
+                return False
+            except Exception as e:
+                logging.error(f"Error in keyboard_interactive_auth_response for {username}: {e}")
+                return False
 
         def gss_host_based_auth_supported(self):
             return False
@@ -1956,8 +2001,21 @@ if asyncssh:
                 logging.debug(f"Begin auth for user: {username}{ip_info} (healthcheck - no auth required)")
                 return False
             else:
-                # For all other usernames, require authentication (e.g. public-key).
-                logging.info(f"Begin auth for user: {username}{ip_info} - authentication required")
+                # For all other usernames, require authentication (preferably public-key).
+                logging.info(f"Begin auth for user: {username}{ip_info} - SSH key authentication preferred")
+                
+                # Check if this user has any registered keys
+                try:
+                    from poker.database import get_database
+                    db = get_database()
+                    existing_keys = db.get_authorized_keys(username)
+                    if not existing_keys:
+                        logging.info(f"No registered SSH keys for {username} - will auto-register on first connection")
+                    else:
+                        logging.debug(f"User {username} has {len(existing_keys)} registered SSH key(s)")
+                except Exception as e:
+                    logging.warning(f"Could not check existing keys for {username}: {e}")
+                
                 # Returning True signals asyncssh that authentication is required.
                 return True
 else:
