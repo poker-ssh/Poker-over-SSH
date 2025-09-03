@@ -39,6 +39,8 @@ class RoomSession:
         self._auto_seated = False
         self._current_room = "default"  # Default room
         
+        logging.debug(f"RoomSession.__init__ called with username: {username}")
+        
         # Send welcome message
         try:
             from poker.terminal_ui import Colors
@@ -53,10 +55,17 @@ class RoomSession:
             
             self._stdout.write(motd + "\r\n")
             if username:
-                self._stdout.write(f"🎭 Logged in as: {Colors.CYAN}{username}{Colors.RESET}\r\n")
-                self._stdout.write(f"💡 Type '{Colors.GREEN}help{Colors.RESET}' for commands or '{Colors.GREEN}seat{Colors.RESET}' to join a game.\r\n")
+                if username == "register":
+                    self._stdout.write(f"🔑 {Colors.CYAN}Registration Mode{Colors.RESET}\r\n")
+                    self._stdout.write(f"💡 Use '{Colors.GREEN}registerkey <your_public_key>{Colors.RESET}' to register your SSH key for your real username.\r\n")
+                    self._stdout.write(f"💡 Get your public key with: {Colors.DIM}cat ~/.ssh/id_ed25519.pub{Colors.RESET}\r\n")
+                    self._stdout.write(f"💡 After registration, connect with: {Colors.GREEN}ssh <your_username>@{server_info['ssh_connection_string']}{Colors.RESET}\r\n")
+                else:
+                    self._stdout.write(f"🎭 Logged in as: {Colors.CYAN}{username}{Colors.RESET}\r\n")
+                    self._stdout.write(f"💡 Type '{Colors.GREEN}help{Colors.RESET}' for commands or '{Colors.GREEN}seat{Colors.RESET}' to join a game.\r\n")
             else:
                 self._stdout.write(f"⚠️  {Colors.YELLOW}No SSH username detected. To play, reconnect with: ssh <username>@{server_info['ssh_connection_string']}{Colors.RESET}\r\n")
+                self._stdout.write(f"🔑 {Colors.CYAN}First time? Register your key: ssh register@{server_info['ssh_connection_string']}{Colors.RESET}\r\n")
                 self._stdout.write(f"💡 Type '{Colors.GREEN}help{Colors.RESET}' for commands.\r\n")
             # Rounded Unicode box; legal disclaimer
             self._stdout.write(
@@ -909,21 +918,49 @@ class RoomSession:
     async def _handle_register_key(self, cmd: str):
         """Handle SSH key registration."""
         try:
-            if not self._username:
-                self._stdout.write("❌ Username required for key registration\r\n\r\n❯ ")
-                await self._stdout.drain()
-                return
-            
             parts = cmd.split()
             if len(parts) < 2:
-                self._stdout.write("❌ Usage: registerkey <public_key>\r\n")
-                self._stdout.write("💡 Example: registerkey ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ... user@host\r\n")
-                self._stdout.write("💡 To get your public key: cat ~/.ssh/id_rsa.pub\r\n\r\n❯ ")
+                self._stdout.write("❌ Usage: registerkey <public_key> [username]\r\n")
+                self._stdout.write("💡 If username is omitted, you must be connected as that user (not 'register')\r\n")
+                self._stdout.write("💡 Example: registerkey ssh-ed25519 AAAAB3NzaC1yc2EAAAADAQABAAABAQ... user@host myusername\r\n")
+                self._stdout.write("💡 To get your public key: cat ~/.ssh/id_ed25519.pub\r\n\r\n❯ ")
                 await self._stdout.drain()
                 return
             
-            # Join all parts after "registerkey" to handle keys with spaces
-            key_str = " ".join(parts[1:])
+            # Parse arguments - everything after "registerkey" except optionally the last word
+            all_parts = parts[1:]
+            
+            # Check if last part looks like a username (no spaces, reasonable length)
+            target_username = None
+            if len(all_parts) > 1 and len(all_parts[-1]) < 50 and ' ' not in all_parts[-1]:
+                # Last part might be a username
+                potential_username = all_parts[-1]
+                key_parts_candidate = all_parts[:-1]
+                
+                # Check if remaining parts form a valid SSH key
+                if len(key_parts_candidate) >= 2:
+                    test_key = " ".join(key_parts_candidate)
+                    if test_key.startswith(('ssh-rsa', 'ssh-ed25519', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521')):
+                        target_username = potential_username
+                        key_str = test_key
+                    else:
+                        # Not a valid key, treat everything as key string
+                        key_str = " ".join(all_parts)
+                else:
+                    # Not enough parts for key, treat everything as key string
+                    key_str = " ".join(all_parts)
+            else:
+                # Last part doesn't look like username, treat everything as key
+                key_str = " ".join(all_parts)
+            
+            # If no target username specified, use current session username
+            if not target_username:
+                if not self._username or self._username == "register":
+                    self._stdout.write("❌ You must specify a username when using the 'register' session\r\n")
+                    self._stdout.write("💡 Usage: registerkey <public_key> <username>\r\n\r\n❯ ")
+                    await self._stdout.drain()
+                    return
+                target_username = self._username
             
             # Basic validation of SSH key format
             if not key_str.startswith(('ssh-rsa', 'ssh-ed25519', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521')):
@@ -955,20 +992,21 @@ class RoomSession:
             db = get_database()
             
             # Check if key is already registered for this user
-            if db.is_key_authorized(self._username, key_str):
-                self._stdout.write("⚠️  This SSH key is already registered for your account\r\n\r\n❯ ")
+            if db.is_key_authorized(target_username, key_str):
+                self._stdout.write(f"⚠️  This SSH key is already registered for user '{target_username}'\r\n\r\n❯ ")
                 await self._stdout.drain()
                 return
             
             # Register the key
-            success = db.register_ssh_key(self._username, key_str, key_type, key_comment)
+            success = db.register_ssh_key(target_username, key_str, key_type, key_comment)
             
             if success:
                 self._stdout.write("✅ SSH key registered successfully!\r\n")
+                self._stdout.write(f"👤 Username: {target_username}\r\n")
                 self._stdout.write(f"🔑 Key Type: {key_type}\r\n")
                 if key_comment:
                     self._stdout.write(f"📝 Comment: {key_comment}\r\n")
-                self._stdout.write("💡 You can now authenticate using this key: ssh <your_username>@<server>\r\n")
+                self._stdout.write(f"💡 You can now authenticate with: ssh {target_username}@{get_ssh_connection_string()}\r\n")
                 self._stdout.write("💡 Use 'listkeys' to see all your registered keys\r\n\r\n❯ ")
             else:
                 self._stdout.write("❌ Failed to register SSH key. It may already be registered\r\n\r\n❯ ")
@@ -1846,10 +1884,17 @@ _current_ssh_username = 'guest'
 # SSH server classes
 if asyncssh:
     class _RoomSSHSession(RoomSession, asyncssh.SSHServerSession):
-        def __init__(self, stdin, stdout, stderr, server_state=None, username=None, **kwargs):
-            # Pass the authenticated username from asyncssh into RoomSession.
-            # Avoid relying on the module-level _current_ssh_username which causes races.
-            super().__init__(stdin, stdout, stderr, server_state=server_state, username=username)
+            def __init__(self, stdin, stdout, stderr, server_state=None, username=None, **kwargs):
+                # Username will be set in connection_made
+                super().__init__(stdin, stdout, stderr, server_state=server_state, username=None)
+
+            def connection_made(self, chan):
+                # Retrieve the authenticated username from the connection
+                conn = chan.get_connection()
+                username = getattr(conn, '_authenticated_username', None)
+                self._username = username
+                logging.debug(f"_RoomSSHSession.connection_made: set self._username to {username}")
+                super().session_started(chan)
 
     class _RoomSSHServer(asyncssh.SSHServer):            
         def password_auth_supported(self):
@@ -1861,72 +1906,73 @@ if asyncssh:
         def validate_public_key(self, username, key):
             """Validate if a public key is acceptable for the user."""
             logging.debug(f"validate_public_key called for username={username}, key={repr(key)}")
-            # Always return True here - we'll do the actual auth check in public_key_auth
+            # Always return True here - do actual auth check in public_key_auth
             return True
 
         def public_key_auth(self, username, key):
             """Verify SSH public key authentication using the key sent by client."""
+            # Try to store the authenticated username on the connection if available
             try:
-                logging.debug(f"public_key_auth called for username={username}, key_obj={repr(key)}")
-                try:
-                    has_export = hasattr(key, 'export_public_key')
-                    logging.debug(f"Key object has export_public_key: {has_export}")
-                except Exception:
-                    logging.exception("Error inspecting key object")
-                from poker.database import get_database
-                
-                # Get the database instance
-                db = get_database()
-                
-                # Convert key to string format for storage/comparison
-                if hasattr(key, 'export_public_key'):
-                    # AsyncSSH key object
-                    key_str = key.export_public_key().decode('utf-8').strip()
-                else:
-                    # Already a string
-                    key_str = str(key).strip()
-                logging.debug(f"Converted offered key to string: {key_str[:200]}")
-                
-                # Extract key type and comment from the key string
-                key_parts = key_str.split()
-                if len(key_parts) >= 2:
-                    key_type = key_parts[0]
-                    key_data = key_parts[1]
-                    key_comment = key_parts[2] if len(key_parts) > 2 else ""
-                else:
-                    key_type = "unknown"
-                    key_data = key_str
-                    key_comment = ""
-                
-                # Check if this username already has any registered keys
-                existing_keys = db.get_authorized_keys(username)
-                logging.debug(f"Existing keys for {username}: {len(existing_keys)}")
-                
-                if not existing_keys:
-                    # First time this username is connecting - register this key
-                    success = db.register_ssh_key(username, key_str, key_type, key_comment)
-                    if success:
-                        logging.info(f"Registered new SSH key for user: {username}")
-                        return True
-                    else:
-                        logging.error(f"Failed to register SSH key for user: {username}")
-                        return False
-                else:
-                    # Username already exists - check if this specific key is authorized
-                    if db.is_key_authorized(username, key_str):
-                        # Update last used timestamp
-                        db.update_key_last_used(username, key_str)
-                        logging.info(f"SSH key authentication successful for user: {username}")
-                        return True
-                    else:
-                        # Different key for existing username - deny access
-                        logging.warning(f"SSH key authentication failed for user: {username} - key not authorized")
-                        return False
-                    
-            except Exception as e:
-                logging.error(f"Error during SSH key authentication for {username}: {e}")
+                conn = getattr(self, '_conn', None)
+                if conn is not None:
+                    setattr(conn, '_authenticated_username', username)
+            except Exception:
+                logging.debug("Could not attach authenticated username to server instance")
+
+            logging.debug(f"public_key_auth called for username={username}, key_obj={repr(key)}")
+            try:
+                has_export = hasattr(key, 'export_public_key')
+                logging.debug(f"Key object has export_public_key: {has_export}")
+            except Exception:
+                logging.exception("Error inspecting key object")
+
+            from poker.database import get_database
+            db = get_database()
+
+            # Convert key to string format (OpenSSH style). Keep only type+data for comparison.
+            if hasattr(key, 'export_public_key'):
+                key_str = key.export_public_key().decode('utf-8').strip()
+            else:
+                key_str = str(key).strip()
+
+            logging.debug(f"Converted offered key to string (preview): {key_str[:200]}")
+
+            # Normalize offered key to '<type> <data>' (ignore comments)
+            offered_parts = key_str.split()
+            if len(offered_parts) >= 2:
+                offered_norm = f"{offered_parts[0]} {offered_parts[1]}"
+            else:
+                offered_norm = key_str
+
+            # Fetch registered keys for this username and compare by normalized form
+            existing_keys = db.get_authorized_keys(username)
+            logging.debug(f"Found {len(existing_keys)} registered key(s) for user {username}")
+
+            if not existing_keys:
+                logging.warning(f"SSH key authentication failed for user: {username} - no keys registered for this username")
                 return False
 
+            for stored in existing_keys:
+                try:
+                    stored_pk = stored.get('public_key', '')
+                    stored_parts = stored_pk.split()
+                    stored_norm = f"{stored_parts[0]} {stored_parts[1]}" if len(stored_parts) >= 2 else stored_pk
+                except Exception:
+                    stored_norm = stored.get('public_key', '')
+
+                logging.debug(f"Comparing offered '{offered_norm[:120]}' to stored '{stored_norm[:120]}' for user {username}")
+                if offered_norm == stored_norm:
+                    # Match found - update last_used with full stored key string and accept
+                    try:
+                        db.update_key_last_used(username, stored.get('public_key', ''))
+                    except Exception:
+                        logging.debug("Failed to update key last_used timestamp")
+                    logging.info(f"SSH key authentication successful for user: {username}")
+                    return True
+
+            logging.warning(f"SSH key authentication failed for user: {username} - offered key not authorized")
+            return False
+                    
         def keyboard_interactive_auth_supported(self):
             return False
 
@@ -1951,9 +1997,12 @@ if asyncssh:
                 peer_ip = peer_port = None
 
             ip_info = f" from {peer_ip}:{peer_port}" if peer_ip and peer_port else ""
-            if username == "healthcheck":
-                # Allow the special healthcheck user to proceed without auth (used by health probes)
-                logging.debug(f"Begin auth for user: {username}{ip_info} (healthcheck - no auth required)")
+            if username in ["healthcheck", "register"]:
+                # Allow special usernames to proceed without auth
+                if username == "healthcheck":
+                    logging.debug(f"Begin auth for user: {username}{ip_info} (healthcheck - no auth required)")
+                else:
+                    logging.info(f"Begin auth for user: {username}{ip_info} (registration mode - no auth required)")
                 return False
             else:
                 # For all other usernames, require authentication (e.g. public-key).
@@ -2004,11 +2053,8 @@ class SSHServer:
         self._server_state = RoomServerState()
 
         def session_factory(stdin, stdout, stderr, **kwargs):
-            # asyncssh passes an authenticated 'username' in kwargs when creating
-            # the session. Forward that into our RoomSession wrapper so the
-            # session has the correct, verified username (avoids impersonation).
-            username = kwargs.get('username') or kwargs.get('peer_username')
-            return _RoomSSHSession(stdin, stdout, stderr, server_state=self._server_state, username=username)
+            logging.debug(f"session_factory called with kwargs: {kwargs}")
+            return _RoomSSHSession(stdin, stdout, stderr, server_state=self._server_state)
 
         # Create server
         self._server = await asyncssh.create_server(
