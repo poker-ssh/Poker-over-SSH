@@ -1851,7 +1851,14 @@ if asyncssh:
             # Avoid relying on the module-level _current_ssh_username which causes races.
             super().__init__(stdin, stdout, stderr, server_state=server_state, username=username)
 
-    class _RoomSSHServer(asyncssh.SSHServer):            
+    class _RoomSSHServer(asyncssh.SSHServer):
+        def get_server_banner(self):
+            """Return the server banner message."""
+            return (
+                "Welcome to Poker over SSH!\n"
+                "Not working? Make sure you have generated an SSH keypair: ssh-keygen -t rsa -b 4096, and you are really who you say you are"
+            )
+            
         def password_auth_supported(self):
             return False
 
@@ -1860,19 +1867,12 @@ if asyncssh:
 
         def validate_public_key(self, username, key):
             """Validate if a public key is acceptable for the user."""
-            logging.debug(f"validate_public_key called for username={username}, key={repr(key)}")
             # Always return True here - we'll do the actual auth check in public_key_auth
             return True
 
         def public_key_auth(self, username, key):
             """Verify SSH public key authentication using the key sent by client."""
             try:
-                logging.debug(f"public_key_auth called for username={username}, key_obj={repr(key)}")
-                try:
-                    has_export = hasattr(key, 'export_public_key')
-                    logging.debug(f"Key object has export_public_key: {has_export}")
-                except Exception:
-                    logging.exception("Error inspecting key object")
                 from poker.database import get_database
                 
                 # Get the database instance
@@ -1885,7 +1885,6 @@ if asyncssh:
                 else:
                     # Already a string
                     key_str = str(key).strip()
-                logging.debug(f"Converted offered key to string: {key_str[:200]}...")
                 
                 # Extract key type and comment from the key string
                 key_parts = key_str.split()
@@ -1898,11 +1897,8 @@ if asyncssh:
                     key_data = key_str
                     key_comment = ""
                 
-                logging.debug(f"Parsed key: type={key_type}, comment='{key_comment}'")
-                
                 # Check if this username already has any registered keys
                 existing_keys = db.get_authorized_keys(username)
-                logging.debug(f"Existing keys for {username}: {len(existing_keys)}")
                 
                 if not existing_keys:
                     # First time this username is connecting - register this key
@@ -1930,50 +1926,8 @@ if asyncssh:
                 return False
 
         def keyboard_interactive_auth_supported(self):
-            # Enable keyboard-interactive auth as a fallback for users without SSH keys
-            return True
-
-        def keyboard_interactive_auth(self, username, submethods):
-            """Handle keyboard-interactive authentication for users without SSH keys."""
-            try:
-                # This method is called when public key auth is not available
-                # We'll use this to provide helpful guidance about SSH keys
-                logging.info(f"Keyboard-interactive auth attempted for user: {username} (likely no SSH key available)")
-                
-                # Send helpful message about SSH key setup
-                prompt_text = (
-                    "\n🔑 SSH Key Authentication Required\n\n"
-                    "This server requires SSH public key authentication for security.\n"
-                    "You need to generate an SSH key pair and connect properly:\n\n"
-                    "1. Generate SSH key: ssh-keygen -t rsa -b 4096\n"
-                    "2. Connect with: ssh <username>@<host>\n\n"
-                    "Your public key will be automatically registered on first connection.\n\n"
-                    "Not working? Make sure you have:\n"
-                    "• Generated an SSH key pair (ssh-keygen)\n"
-                    "• Added your key to ssh-agent (ssh-add ~/.ssh/id_rsa)\n"
-                    "• Or specified the key: ssh -i ~/.ssh/id_rsa <username>@<host>\n\n"
-                    "Connection will be closed. Please generate an SSH key and reconnect.\n\n"
-                    "Press Enter to close connection: "
-                )
-                
-                # Create a simple prompt that will show our helpful message
-                # Return the challenge object that asyncssh will handle
-                return [(prompt_text, False)]  # (prompt, echo)
-                
-            except Exception as e:
-                logging.error(f"Error in keyboard_interactive_auth for {username}: {e}")
-                # Return empty list to deny access
-                return []
-
-        def keyboard_interactive_auth_response(self, username, responses):
-            """Handle the response to keyboard interactive auth."""
-            try:
-                # Always deny access after showing the helpful message
-                logging.info(f"Denying keyboard-interactive access for {username} - SSH key required")
-                return False
-            except Exception as e:
-                logging.error(f"Error in keyboard_interactive_auth_response for {username}: {e}")
-                return False
+            # Disable keyboard-interactive auth - only allow public key authentication
+            return False
 
         def gss_host_based_auth_supported(self):
             return False
@@ -1998,7 +1952,6 @@ if asyncssh:
             ip_info = f" from {peer_ip}:{peer_port}" if peer_ip and peer_port else ""
             if username == "healthcheck":
                 # Allow the special healthcheck user to proceed without auth (used by health probes)
-                logging.debug(f"Begin auth for user: {username}{ip_info} (healthcheck - no auth required)")
                 return False
             else:
                 # For all other usernames, require authentication (preferably public-key).
@@ -2011,8 +1964,6 @@ if asyncssh:
                     existing_keys = db.get_authorized_keys(username)
                     if not existing_keys:
                         logging.info(f"No registered SSH keys for {username} - will auto-register on first connection")
-                    else:
-                        logging.debug(f"User {username} has {len(existing_keys)} registered SSH key(s)")
                 except Exception as e:
                     logging.warning(f"Could not check existing keys for {username}: {e}")
                 
@@ -2061,11 +2012,24 @@ class SSHServer:
         # Build server state
         self._server_state = RoomServerState()
 
-        def session_factory(stdin, stdout, stderr, **kwargs):
-            # asyncssh passes an authenticated 'username' in kwargs when creating
-            # the session. Forward that into our RoomSession wrapper so the
-            # session has the correct, verified username (avoids impersonation).
-            username = kwargs.get('username') or kwargs.get('peer_username')
+        def session_factory(stdin, stdout, stderr):
+            # For asyncssh, the username should be available through the connection
+            username = None
+            
+            # Try to get username from stdin's connection
+            if hasattr(stdin, 'channel') and hasattr(stdin.channel, 'connection'):
+                connection = stdin.channel.connection
+                if hasattr(connection, '_auth_username'):
+                    username = connection._auth_username
+                elif hasattr(connection, 'username'):
+                    username = connection.username
+                elif hasattr(connection, '_username'):
+                    username = connection._username
+            
+            # Try alternative ways to get the username
+            if not username and hasattr(stdin, 'get_extra_info'):
+                username = stdin.get_extra_info('username')
+                
             return _RoomSSHSession(stdin, stdout, stderr, server_state=self._server_state, username=username)
 
         # Create server

@@ -54,11 +54,6 @@ def format_motd(server_info: Dict[str, Any]) -> str:
         f"🖥️ Server: {Colors.CYAN}{server_info['server_name']}{Colors.RESET}",
         f"🌐 Environment: {Colors.GREEN if server_info['server_env'] == 'Public Stable' else Colors.YELLOW}{server_info['server_env']}{Colors.RESET}",
         f"📍 Connect: {Colors.BOLD}ssh <username>@{server_info['ssh_connection_string']}{Colors.RESET}",
-        "",
-        f"{Colors.BOLD}{Colors.CYAN}🔑 SSH Key Authentication Required{Colors.RESET}",
-        f"First time? Generate an SSH key: {Colors.GREEN}ssh-keygen -t rsa -b 4096{Colors.RESET}",
-        f"Keys are auto-registered on first successful connection.",
-        f"Need help? Try: {Colors.GREEN}ssh-keygen -t rsa{Colors.RESET} then reconnect",
     ]
     
     # Add version info if not dev build
