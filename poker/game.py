@@ -331,7 +331,30 @@ class Game:
                     players_to_act.discard(p.name)
                     continue
 
+                # Check if act is None (player action failed)
+                if act is None:
+                    logging.warning(f"Player {p.name} returned None action, folding")
+                    p.state = 'folded'
+                    self.action_history.append(f"{p.name} folded (invalid action)")
+                    players_to_act.discard(p.name)
+                    continue
+
+                # Check if act is a valid dictionary
+                if not isinstance(act, dict):
+                    logging.warning(f"Player {p.name} returned invalid action type: {type(act)}, folding")
+                    p.state = 'folded'
+                    self.action_history.append(f"{p.name} folded (invalid action type)")
+                    players_to_act.discard(p.name)
+                    continue
+
                 a = act.get('action')
+                if a is None:
+                    logging.warning(f"Player {p.name} returned action without 'action' key, folding")
+                    p.state = 'folded'
+                    self.action_history.append(f"{p.name} folded (malformed action)")
+                    players_to_act.discard(p.name)
+                    continue
+
                 amt = int(act.get('amount', 0))
 
                 logging.debug("Player %s action: %s, amount: %s", p.name, a, amt)
