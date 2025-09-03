@@ -67,7 +67,8 @@ class WalletManager:
         # Update last activity
         self._wallet_cache[player_name]['last_activity'] = time.time()
     
-    def save_wallet_to_database(self, player_name: str) -> bool:
+    def save_wallet_to_database(self, player_name: str, transaction_type: str = 'MANUAL_SAVE', 
+                               description_prefix: str = 'Manual save') -> bool:
         """Manually save a wallet from cache to database."""
         if player_name not in self._wallet_cache:
             logging.debug(f"No cached wallet found for {player_name}, nothing to save")
@@ -98,8 +99,8 @@ class WalletManager:
             
             # Update database with cached values
             self.db.update_wallet_balance(
-                player_name, new_balance, 'MANUAL_SAVE',
-                f"Manual save: ${old_balance} -> ${new_balance}"
+                player_name, new_balance, transaction_type,
+                f"{description_prefix}: ${old_balance} -> ${new_balance}"
             )
             
             # Update game stats with the actual balance change (not session total)
