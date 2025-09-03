@@ -1,11 +1,11 @@
 name: Trigger PoS-Docker Publish
 
 # Run when the update-version workflow file is changed (committed/updated)
-on:
-  push:
-    paths:
-      - .github/workflows/update-version.yml
-  workflow_dispatch:
+#on:
+#  push:
+#    paths:
+#      - .github/workflows/update-version.yml
+#  workflow_dispatch:
 
 permissions: {}
 
