@@ -137,6 +137,13 @@ class PlayerManager:
                     # The wallet balance IS the chips - no transfer needed
                     wallet_manager._update_cache(player.name, balance=player.chips)
                     
+                    # Auto-save wallet to database after each game
+                    success = wallet_manager.save_wallet_to_database(player.name)
+                    if success:
+                        logging.info(f"Auto-saved wallet for {player.name} after round completion")
+                    else:
+                        logging.error(f"Failed to auto-save wallet for {player.name} after round completion")
+                    
                     # Log final result with round winnings
                     round_winnings = player.get_winnings()
                     db.log_action(
