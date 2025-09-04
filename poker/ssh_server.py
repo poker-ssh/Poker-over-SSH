@@ -2011,6 +2011,30 @@ if asyncssh:
                 logging.error(f"❌ Error during SSH key authentication for {username}: {e}")
                 return False
 
+        def auth_banner_supported(self):
+            """Indicate that auth banners are supported."""
+            return True
+
+        def send_auth_banner(self):
+            """Send authentication banner to the client."""
+            try:
+                from .server_info import get_server_info
+                server_info = get_server_info()
+                ssh_connection = server_info['ssh_connection_string']
+                
+                return (
+                    "Welcome to Poker over SSH!\n"
+                    f"Not working? Make sure you have generated an SSH keypair: ssh-keygen -t rsa -b 4096, and you are really who you say you are!\n"
+                    f"If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@{ssh_connection}"
+                )
+            except Exception:
+                # Fallback banner if server_info is unavailable
+                return (
+                    "Welcome to Poker over SSH!\n"
+                    "Not working? Make sure you have generated an SSH keypair: ssh-keygen -t rsa -b 4096, and you are really who you say you are!\n"
+                    "If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@localhost -p 22222"
+                )
+
         def keyboard_interactive_auth_supported(self):
             # Enable keyboard-interactive auth to show banners/messages
             logging.info("keyboard_interactive_auth_supported called - returning True")
@@ -2049,11 +2073,11 @@ if asyncssh:
             logging.info(f"validate_kbdint_response called for {username}, responses: {responses}")
             return False
 
-        def gss_host_based_auth_supported(self):
+        def password_auth_supported(self):
             return False
 
-        def host_based_auth_supported(self):
-            return False
+        def public_key_auth_supported(self):
+            return True
 
         def begin_auth(self, username):
             # Called when auth begins for a username. We log the attempt here but
@@ -2074,16 +2098,20 @@ if asyncssh:
                 # Allow the special healthcheck user to proceed without auth (used by health probes)
                 return False
             else:
-                # Send authentication banner before starting auth process
+                # Send banner using AsyncSSH's userauth banner mechanism
                 try:
-                    banner = self.get_auth_banner()
-                    # Try to send banner using AsyncSSH's built-in mechanism
-                    if hasattr(self, '_conn') and hasattr(self._conn, 'send_userauth_banner'):
+                    banner = getattr(self, '_banner_message', None)
+                    if banner and hasattr(self, '_conn') and hasattr(self._conn, 'send_userauth_banner'):
                         self._conn.send_userauth_banner(banner)
-                    elif hasattr(self, 'send_auth_banner'):
-                        self.send_auth_banner()
+                        logging.info(f"Sent auth banner to {username}")
+                    elif banner:
+                        # Try alternative banner methods
+                        transport = getattr(self, '_transport', None)
+                        if transport and hasattr(transport, 'send_banner'):
+                            transport.send_banner(banner)
+                        logging.debug(f"Attempted to send banner to {username}")
                 except Exception as e:
-                    logging.debug(f"Could not send auth banner: {e}")
+                    logging.debug(f"Could not send auth banner to {username}: {e}")
                     
                 # For all other usernames, require authentication (preferably public-key).
                 logging.info(f"Begin auth for user: {username}{ip_info} - SSH key authentication preferred")
@@ -2164,8 +2192,32 @@ class SSHServer:
             return _RoomSSHSession(stdin, stdout, stderr, server_state=self._server_state, username=username)
 
         # Create server
+        try:
+            from .server_info import get_server_info
+            server_info = get_server_info()
+            ssh_connection = server_info['ssh_connection_string']
+            
+            banner_message = (
+                "Welcome to Poker over SSH!\n"
+                f"Not working? Make sure you have generated an SSH keypair: ssh-keygen -t rsa -b 4096, and you are really who you say you are!\n"
+                f"If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@{ssh_connection}"
+            )
+        except Exception:
+            banner_message = (
+                "Welcome to Poker over SSH!\n"
+                "Not working? Make sure you have generated an SSH keypair: ssh-keygen -t rsa -b 4096, and you are really who you say you are!\n"
+                "If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@localhost -p 22222"
+            )
+
+        # Create the server factory
+        def server_factory():
+            server = _RoomSSHServer()
+            # Set banner on the server instance
+            server._banner_message = banner_message
+            return server
+
         self._server = await asyncssh.create_server(
-            _RoomSSHServer,
+            server_factory,
             self.host,
             self.port,
             server_host_keys=[str(host_key_path)],
