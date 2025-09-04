@@ -1897,11 +1897,22 @@ if asyncssh:
                     key_data = key_str
                     key_comment = ""
                 
+                # SECURITY FIX: Check if this SSH key is already registered under a different username
+                existing_owner = db.get_key_owner(key_str)
+                if existing_owner and existing_owner != username:
+                    logging.warning(f"❌ SSH key authentication failed for user: {username} - key is already registered under username '{existing_owner}'")
+                    return False
+                
                 # Check if this username already has any registered keys
                 existing_keys = db.get_authorized_keys(username)
                 
                 if not existing_keys:
-                    # First time this username is connecting - register this key
+                    # First time this username is connecting - only allow if key is not registered elsewhere
+                    if existing_owner:
+                        logging.warning(f"❌ SSH key authentication failed for user: {username} - key already belongs to '{existing_owner}'")
+                        return False
+                    
+                    # Key is not registered anywhere, safe to auto-register
                     success = db.register_ssh_key(username, key_str, key_type, key_comment)
                     if success:
                         logging.info(f"✅ Auto-registered new SSH key for user: {username} (type: {key_type})")
