@@ -125,12 +125,11 @@ class DatabaseManager:
                 CREATE TABLE IF NOT EXISTS ssh_keys (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT NOT NULL,
-                    public_key TEXT NOT NULL,
+                    public_key TEXT NOT NULL UNIQUE,
                     key_type TEXT NOT NULL,
                     key_comment TEXT,
                     registered_at REAL NOT NULL,
-                    last_used REAL NOT NULL DEFAULT 0,
-                    UNIQUE(username, public_key)
+                    last_used REAL NOT NULL DEFAULT 0
                 )
             """)
             

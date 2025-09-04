@@ -1867,11 +1867,6 @@ if asyncssh:
 
         def validate_public_key(self, username, key):
             """Validate if a public key is acceptable for the user."""
-            # Always return True here - we'll do the actual auth check in public_key_auth
-            return True
-
-        def public_key_auth(self, username, key):
-            """Verify SSH public key authentication using the key sent by client."""
             try:
                 from poker.database import get_database
                 
@@ -1897,40 +1892,83 @@ if asyncssh:
                     key_data = key_str
                     key_comment = ""
                 
-                # SECURITY FIX: Check if this SSH key is already registered under a different username
+                # CRITICAL SECURITY CHECK: Verify SSH key ownership atomically
                 existing_owner = db.get_key_owner(key_str)
-                if existing_owner and existing_owner != username:
-                    logging.warning(f"❌ SSH key authentication failed for user: {username} - key is already registered under username '{existing_owner}'")
-                    return False
                 
-                # Check if this username already has any registered keys
-                existing_keys = db.get_authorized_keys(username)
-                
-                if not existing_keys:
-                    # First time this username is connecting - only allow if key is not registered elsewhere
-                    if existing_owner:
-                        logging.warning(f"❌ SSH key authentication failed for user: {username} - key already belongs to '{existing_owner}'")
-                        return False
-                    
-                    # Key is not registered anywhere, safe to auto-register
-                    success = db.register_ssh_key(username, key_str, key_type, key_comment)
-                    if success:
-                        logging.info(f"✅ Auto-registered new SSH key for user: {username} (type: {key_type})")
+                if existing_owner:
+                    # Key is already registered to someone
+                    if existing_owner == username:
+                        # This key belongs to this username - allow validation
+                        db.update_key_last_used(username, key_str)
+                        logging.info(f"✅ SSH key validation successful for user: {username}")
                         return True
                     else:
-                        logging.error(f"❌ Failed to register SSH key for user: {username}")
+                        # Key belongs to different username - SECURITY VIOLATION
+                        logging.warning(f"🔒 SSH key validation DENIED for user: {username} - key already registered under username '{existing_owner}'")
                         return False
                 else:
-                    # Username already exists - check if this specific key is authorized
-                    if db.is_key_authorized(username, key_str):
+                    # Key is not registered anywhere
+                    # Check if this username already has different keys registered
+                    existing_keys = db.get_authorized_keys(username)
+                    
+                    if existing_keys:
+                        # Username already exists with different keys - deny this new key
+                        logging.warning(f"🔒 SSH key validation DENIED for user: {username} - username already has {len(existing_keys)} different key(s) registered")
+                        return False
+                    
+                    # Username is new and key is new - register and allow
+                    success = db.register_ssh_key(username, key_str, key_type, key_comment)
+                    if success:
+                        logging.info(f"🔑 Auto-registered new SSH key for user: {username} (type: {key_type})")
+                        return True
+                    else:
+                        # Registration failed - check if someone else registered it concurrently
+                        existing_owner = db.get_key_owner(key_str)
+                        if existing_owner == username:
+                            logging.info(f"✅ SSH key validation successful for user: {username} (registered concurrently)")
+                            return True
+                        else:
+                            logging.error(f"❌ SSH key validation failed for user: {username} - registration failed")
+                            return False
+                    
+            except Exception as e:
+                logging.error(f"❌ Error during SSH key validation for {username}: {e}")
+                return False
+
+        def public_key_auth(self, username, key):
+            """Verify SSH public key authentication using the key sent by client."""
+            try:
+                from poker.database import get_database
+                
+                # Get the database instance
+                db = get_database()
+                
+                # Convert key to string format for storage/comparison
+                if hasattr(key, 'export_public_key'):
+                    # AsyncSSH key object
+                    key_str = key.export_public_key().decode('utf-8').strip()
+                else:
+                    # Already a string
+                    key_str = str(key).strip()
+                
+                # Check current state
+                existing_owner = db.get_key_owner(key_str)
+                
+                if existing_owner:
+                    # Key is already registered
+                    if existing_owner == username:
                         # Update last used timestamp
                         db.update_key_last_used(username, key_str)
                         logging.info(f"✅ SSH key authentication successful for user: {username}")
                         return True
                     else:
-                        # Different key for existing username - deny access
-                        logging.warning(f"❌ SSH key authentication failed for user: {username} - key not authorized (user has {len(existing_keys)} registered key(s))")
+                        # Key belongs to different user - should have been caught in validate_public_key
+                        logging.error(f"🔒 SSH key authentication FAILED for user: {username} - key belongs to '{existing_owner}'")
                         return False
+                else:
+                    # Key validation should have handled registration - this is a fallback
+                    logging.warning(f"⚠️  public_key_auth called but key not registered for {username}")
+                    return False
                     
             except Exception as e:
                 logging.error(f"❌ Error during SSH key authentication for {username}: {e}")
