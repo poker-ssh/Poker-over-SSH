@@ -125,12 +125,11 @@ class DatabaseManager:
                 CREATE TABLE IF NOT EXISTS ssh_keys (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT NOT NULL,
-                    public_key TEXT NOT NULL,
+                    public_key TEXT NOT NULL UNIQUE,
                     key_type TEXT NOT NULL,
                     key_comment TEXT,
                     registered_at REAL NOT NULL,
-                    last_used REAL NOT NULL DEFAULT 0,
-                    UNIQUE(username, public_key)
+                    last_used REAL NOT NULL DEFAULT 0
                 )
             """)
             
@@ -595,6 +594,23 @@ class DatabaseManager:
         with self.get_cursor() as cursor:
             cursor.execute("SELECT DISTINCT username FROM ssh_keys ORDER BY username")
             return [row['username'] for row in cursor.fetchall()]
+
+    def get_key_owner(self, public_key: str) -> Optional[str]:
+        """Get the username that owns a specific SSH key."""
+        with self.get_cursor() as cursor:
+            cursor.execute("""
+                SELECT username FROM ssh_keys 
+                WHERE public_key = ? 
+                LIMIT 1
+            """, (public_key,))
+            
+            row = cursor.fetchone()
+            return row['username'] if row else None
+
+    def is_key_registered_elsewhere(self, username: str, public_key: str) -> bool:
+        """Check if a public key is already registered under a different username."""
+        existing_owner = self.get_key_owner(public_key)
+        return existing_owner is not None and existing_owner != username
 
 
     def can_claim_bonus(self, player_name: str) -> Tuple[bool, str]:
