@@ -1988,14 +1988,14 @@ if asyncssh:
                 
                 return (
                     "Welcome to Poker over SSH!\r\n"
-                    f"Not working? Make sure you have generated an SSH keypair: ssh-keygen -t rsa -b 4096, and you are really who you say you are!\r\n"
+                    f"Not working? MAKE SURE you have generated an SSH keypair: `ssh-keygen -t ed25519 -b 4096 -f ~/.ssh/id_ed25519`, and you are really who you say you are!\r\n"
                     f"If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@{ssh_connection}\r\n\r\n"
                 )
             except Exception:
                 # Fallback banner if server_info is unavailable
                 return (
                     "Welcome to Poker over SSH!\r\n"
-                    "Not working? Make sure you have generated an SSH keypair: ssh-keygen -t rsa -b 4096, and you are really who you say you are!\r\n"
+                    "Not working? MAKE SURE you have generated an SSH keypair: `ssh-keygen -t ed25519 -b 4096 -f ~/.ssh/id_ed25519`, and you are really who you say you are!\r\n"
                     "If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@<host> -p <port>\r\n\r\n"
                 )
 
@@ -2013,7 +2013,7 @@ if asyncssh:
                 
                 title = "Welcome to Poker over SSH!"
                 instructions = (
-                    f"Not working? Make sure you have generated an SSH keypair: ssh-keygen -t rsa -b 4096, and you are really who you say you are!\r\n"
+                    f"Not working? MAKE SURE you have generated an SSH keypair: `ssh-keygen -t ed25519 -b 4096 -f ~/.ssh/id_ed25519`, and you are really who you say you are!\r\n"
                     f"If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@{ssh_connection}\r\n"
                     "\r\nThis server only accepts SSH key authentication.\r\n"
                     "Press Enter to close this connection..."
@@ -2021,7 +2021,7 @@ if asyncssh:
             except Exception:
                 title = "Welcome to Poker over SSH!"
                 instructions = (
-                    "Not working? Make sure you have generated an SSH keypair: ssh-keygen -t rsa -b 4096, and you are really who you say you are!\r\n"
+                    "Not working? MAKE SURE you have generated an SSH keypair: `ssh-keygen -t ed25519 -b 4096 -f ~/.ssh/id_ed25519`, and you are really who you say you are!\r\n"
                     "If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@<host> -p <port>\r\n"
                     "\r\nThis server only accepts SSH key authentication.\r\n"
                     "Press Enter to close this connection..."
@@ -2156,13 +2156,13 @@ class SSHServer:
             
             banner_message = (
                 "Welcome to Poker over SSH!\n"
-                f"Not working? Make sure you have generated an SSH keypair: ssh-keygen -t rsa -b 4096, and you are really who you say you are!\n"
+                f"Not working? MAKE SURE you have generated an SSH keypair: `ssh-keygen -t ed25519 -b 4096 -f ~/.ssh/id_ed25519`, and you are really who you say you are!\n"
                 f"If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@{ssh_connection}\n\n"
             )
         except Exception:
             banner_message = (
                 "Welcome to Poker over SSH!\n"
-                "Not working? Make sure you have generated an SSH keypair: ssh-keygen -t rsa -b 4096, and you are really who you say you are!\n"
+                "Not working? MAKE SURE you have generated an SSH keypair: `ssh-keygen -t ed25519 -b 4096 -f ~/.ssh/id_ed25519`, and you are really who you say you are!\n"
                 "If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@localhost -p 22222\n\n"
             )
 
