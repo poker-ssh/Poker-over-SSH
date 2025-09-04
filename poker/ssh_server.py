@@ -1989,14 +1989,14 @@ if asyncssh:
                 return (
                     "Welcome to Poker over SSH!\r\n"
                     f"Not working? Make sure you have generated an SSH keypair: ssh-keygen -t rsa -b 4096, and you are really who you say you are!\r\n"
-                    f"If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@{ssh_connection}"
+                    f"If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@{ssh_connection}\r\n"
                 )
             except Exception:
                 # Fallback banner if server_info is unavailable
                 return (
                     "Welcome to Poker over SSH!\r\n"
                     "Not working? Make sure you have generated an SSH keypair: ssh-keygen -t rsa -b 4096, and you are really who you say you are!\r\n"
-                    "If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@localhost -p 22222"
+                    "If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@localhost -p 22222\r\n"
                 )
 
         def keyboard_interactive_auth_supported(self):
@@ -2157,13 +2157,13 @@ class SSHServer:
             banner_message = (
                 "Welcome to Poker over SSH!\n"
                 f"Not working? Make sure you have generated an SSH keypair: ssh-keygen -t rsa -b 4096, and you are really who you say you are!\n"
-                f"If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@{ssh_connection}"
+                f"If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@{ssh_connection}\n"
             )
         except Exception:
             banner_message = (
                 "Welcome to Poker over SSH!\n"
                 "Not working? Make sure you have generated an SSH keypair: ssh-keygen -t rsa -b 4096, and you are really who you say you are!\n"
-                "If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@localhost -p 22222"
+                "If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@localhost -p 22222\n"
             )
 
         # Create the server factory
