@@ -154,7 +154,7 @@ class PlayerManager:
                         details=f"Round ended with ${player.chips} chips (round winnings: ${round_winnings:+})"
                     )
                 elif player.is_ai:
-                    # AI player - check if broke and respawn/reset chips instead of removing
+                    # AI player - if fully broke (<=0) mark as broke and respawn; if low (<$25) respawn/top-up
                     if player.chips <= 0:
                         logging.info(f"AI player {player.name} went broke, respawning/resetting chips")
                         try:
@@ -181,6 +181,27 @@ class PlayerManager:
                             logging.debug(f"Failed to log AI respawn for {player.name}")
 
                         logging.info(f"Respawned AI {player.name} with ${player.chips} chips (rebuys={player.rebuys})")
+                    elif player.chips < 25:
+                        # Top-up low-balance AIs so they can continue playing
+                        logging.info(f"AI player {player.name} has low balance (${player.chips}), respawning/top-up")
+                        default_ai_chips = 100
+                        player.chips = default_ai_chips
+                        player.rebuys = (player.rebuys or 0) + 1
+                        player.state = 'active'
+                        player.initial_chips = default_ai_chips
+                        player.round_id = str(uuid.uuid4())
+
+                        # Log respawn/top-up action
+                        try:
+                            db.log_action(
+                                player.name, self.room_code, "AI_TOPUP", player.chips,
+                                round_id=player.round_id,
+                                details=f"AI topped-up/respawned with ${player.chips} chips (was ${player.chips})"
+                            )
+                        except Exception:
+                            logging.debug(f"Failed to log AI top-up for {player.name}")
+
+                        logging.info(f"Topped-up AI {player.name} to ${player.chips} chips (rebuys={player.rebuys})")
         except ImportError:
             # Fallback if wallet/database system not available
             pass
