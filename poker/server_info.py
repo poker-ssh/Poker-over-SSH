@@ -50,7 +50,8 @@ def format_motd(server_info: Dict[str, Any]) -> str:
     from .terminal_ui import Colors
     
     motd_lines = [
-        f"{Colors.BOLD}{Colors.YELLOW}🎰 Welcome to Poker-over-SSH! 🎰{Colors.RESET}",
+        # This is in the SSH pre-auth banner
+        #f"{Colors.BOLD}{Colors.YELLOW}🎰 Welcome to Poker-over-SSH! 🎰{Colors.RESET}",
         f"🖥️ Server: {Colors.CYAN}{server_info['server_name']}{Colors.RESET}",
         f"🌐 Environment: {Colors.GREEN if server_info['server_env'] == 'Public Stable' else Colors.YELLOW}{server_info['server_env']}{Colors.RESET}",
         f"📍 Connect: {Colors.BOLD}ssh <username>@{server_info['ssh_connection_string']}{Colors.RESET}",
