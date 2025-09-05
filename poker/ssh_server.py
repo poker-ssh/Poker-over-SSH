@@ -1630,7 +1630,7 @@ class RoomSession:
                     existing_ai_names = {p.name for p in room.pm.players if p.is_ai}
 
                     for ai_name in ai_names:
-                        # Stop when we've reached the required AI count
+                        # Stop when reached the required AI count
                         current_ai_count = len([p for p in room.pm.players if p.is_ai])
                         if current_ai_count >= required_ai_count:
                             break
