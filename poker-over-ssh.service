@@ -1,0 +1,20 @@
+# You may want to change the user service file to match your username and paths
+# Save this file as ~/.config/systemd/user/poker-over-ssh.service
+#
+# Then enable and start the service with:
+# systemctl --user enable --now poker-over-ssh.service
+
+[Unit]
+Description=Poker over SSH (user service)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/qincai/Poker-over-SSH
+ExecStart=/home/qincai/Poker-over-SSH/.venv/bin/python /home/qincai/Poker-over-SSH/main.py --port 23456
+Restart=on-failure
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
