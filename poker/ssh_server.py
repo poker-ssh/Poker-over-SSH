@@ -837,7 +837,7 @@ class RoomSession:
                     
             elif subcmd == "saveall":
                 # Admin command to save all cached wallets
-                if self._username in ['admin', 'root']:  # Basic admin check
+                if self._username in ['root']:  # Basic admin check
                     saved_count = wallet_manager.save_all_wallets()
                     self._stdout.write(f"✅ Saved {saved_count} wallets to database\r\n\r\n❯ ")
                 else:
@@ -845,7 +845,7 @@ class RoomSession:
                     
             elif subcmd == "check":
                 # Admin command to check database integrity
-                if self._username in ['admin', 'root']:  # Basic admin check
+                if self._username in ['root']:  # Basic admin check
                     from poker.database import get_database
                     db = get_database()
                     issues = db.check_database_integrity()
@@ -864,7 +864,7 @@ class RoomSession:
                     
             elif subcmd == "audit":
                 # Admin command to audit specific player's transactions
-                if self._username in ['admin', 'root']:  # Basic admin check
+                if self._username in ['root']:  # Basic admin check
                     if len(parts) < 3:
                         self._stdout.write(f"❌ Usage: wallet audit <player_name>\r\n\r\n❯ ")
                     else:
@@ -1638,19 +1638,13 @@ class RoomSession:
                         if ai_name in existing_ai_names:
                             continue  # AI already exists
 
-                        # Check respawn cooldown and respawn if allowed
+                        # Force-add AI player to meet the minimum AI count (IGNORE respawn cooldown here)
                         try:
-                            from poker.database import get_database
-                            db = get_database()
-                            if not db.can_ai_respawn(ai_name):
-                                logging.debug(f"AI {ai_name} still on respawn cooldown, skipping")
-                                continue
-                            db.respawn_ai(ai_name)
+                            logging.debug(f"Adding AI player (to reach AI minimum): {ai_name}")
+                            ai_player = room.pm.register_player(ai_name, is_ai=True, chips=200)
                         except Exception as e:
-                            logging.error(f"Error checking/respawning AI {ai_name}: {e}")
-
-                        logging.debug(f"Adding AI player (to reach AI minimum): {ai_name}")
-                        ai_player = room.pm.register_player(ai_name, is_ai=True, chips=200)
+                            logging.error(f"Failed to add AI {ai_name}: {e}")
+                            continue
 
                         # Set up AI actor
                         from poker.ai import PokerAI
