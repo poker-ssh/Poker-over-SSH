@@ -1618,7 +1618,7 @@ class RoomSession:
                         
                         added_ais += 1
                         
-                # Ensure we have at least N AI players in the room (user requested at least 3 AIs)
+                # Ensure we have at least N AI players in the room
                 required_ai_count = 3
                 try:
                     current_ai_count = len([p for p in room.pm.players if p.is_ai])
