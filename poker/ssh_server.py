@@ -1570,9 +1570,12 @@ class RoomSession:
                 current_count = len(total_players)
                 
                 logging.debug(f"Current players: {current_count}, minimum needed: {min_players}")
-                
+
+                # Potential AI candidates (defined here so available for both loops)
+                # TODO: add more names
+                ai_names = ["AI_Alice", "AI_Bob", "AI_Charlie", "AI_David", "AI_Eve"]
+
                 if current_count < min_players:
-                    ai_names = ["AI_Alice", "AI_Bob", "AI_Charlie", "AI_David", "AI_Eve"]
                     existing_ai_names = {p.name for p in total_players if p.is_ai}
                     
                     # Try to add AI players until we reach minimum
@@ -1615,6 +1618,51 @@ class RoomSession:
                         
                         added_ais += 1
                         
+                # Ensure we have at least N AI players in the room (user requested at least 3 AIs)
+                required_ai_count = 3
+                try:
+                    current_ai_count = len([p for p in room.pm.players if p.is_ai])
+                except Exception:
+                    current_ai_count = 0
+
+                if current_ai_count < required_ai_count:
+                    logging.debug(f"Current AI count: {current_ai_count}, ensuring at least {required_ai_count} AIs")
+                    existing_ai_names = {p.name for p in room.pm.players if p.is_ai}
+
+                    for ai_name in ai_names:
+                        # Stop when we've reached the required AI count
+                        current_ai_count = len([p for p in room.pm.players if p.is_ai])
+                        if current_ai_count >= required_ai_count:
+                            break
+
+                        if ai_name in existing_ai_names:
+                            continue  # AI already exists
+
+                        # Check respawn cooldown and respawn if allowed
+                        try:
+                            from poker.database import get_database
+                            db = get_database()
+                            if not db.can_ai_respawn(ai_name):
+                                logging.debug(f"AI {ai_name} still on respawn cooldown, skipping")
+                                continue
+                            db.respawn_ai(ai_name)
+                        except Exception as e:
+                            logging.error(f"Error checking/respawning AI {ai_name}: {e}")
+
+                        logging.debug(f"Adding AI player (to reach AI minimum): {ai_name}")
+                        ai_player = room.pm.register_player(ai_name, is_ai=True, chips=200)
+
+                        # Set up AI actor
+                        from poker.ai import PokerAI
+                        ai = PokerAI(ai_player)
+
+                        # Set up thinking callback to notify all players
+                        async def thinking_callback(ai_name: str, is_thinking: bool):
+                            await self._broadcast_ai_thinking_status(ai_name, is_thinking, room)
+
+                        ai.thinking_callback = thinking_callback
+                        ai_player.actor = ai.decide_action
+                        existing_ai_names.add(ai_name)
                 players = list(room.pm.players)
                 logging.debug(f"Final player list: {[p.name for p in players]}")
                 
