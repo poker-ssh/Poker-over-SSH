@@ -12,9 +12,9 @@ Lightweight, room-aware Texas Hold'em served over [SSH](https://en.wikipedia.org
 
 In this repo there are: a self-hosted SSH server that runs the game and terminal UI (`poker/ssh_server.py`), a game engine (`poker/game.py`), room management (`poker/rooms.py`), player & wallet management (`poker/player.py`, `poker/wallet.py`), AI (`poker/ai.py`), a terminal renderer (`poker/terminal_ui.py`) and a persistent database module (`poker/database.py`).
 
-## Quickstart (local development)
+## Play the public demo (fast)
 
-### Play the public demo (fast)
+[![Poker over SSH server status](https://poker-status.qincai.xyz/api/badge/1/status)](https://poker-status-prod.qincai.xyz/)
 
 [![Poker over SSH server status](https://poker-status.qincai.xyz/api/badge/1/status)](https://poker-status-prod.qincai.xyz/)
 
@@ -24,7 +24,23 @@ Want to try the game right away? Connect to the public demo server:
 ssh play.poker.qincai.xyz -p 23456
 ```
 
+> [!IMPORTANT]
+> If you haven’t used SSH before, you’ll need an SSH keypair on your machine.
+>
+> Generate one with:  
+> `ssh-keygen -t ed25519 -N ""`  
+> (Press ENTER at all prompts.)
+>
+> If you see “Permission denied (publickey)” when connecting, check:
+>
+> - You are connecting as your own username (not impersonating another user).
+> - No one else has previously connected with your username.
+> - Permissions on your `~/.ssh` directory are set to `700`, and your key files to `600`.
+> - If you are still having issues, try connecting using a different username: `ssh <different_username>@play.poker.qincai.xyz -p 23456`
+
 Your SSH username will be used as your in-game name. This is a public demo instance — expect ephemeral data and occasional resets of database (oh and downtime). Don't use private keys when trying the demo.
+
+## Quickstart (local development)
 
 1. Create a Python virtualenv and install dependencies listed in `requirements.txt`.
 
