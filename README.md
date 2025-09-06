@@ -16,6 +16,8 @@ In this repo there are: a self-hosted SSH server that runs the game and terminal
 
 ### Play the public demo (fast)
 
+[![Poker over SSH server status](https://poker-status.qincai.xyz/api/badge/1/status)](https://poker-status-prod.qincai.xyz/)
+
 Want to try the game right away? Connect to the public demo server:
 
 ```bash
