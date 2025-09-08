@@ -214,9 +214,9 @@ class PokerAI:
 
     BETTING ROUND: {"Preflop" if not community else f"Post-flop ({len(community)} cards)"}
 
-    Important rules (follow these strictly):
+    Important rules:
     - If you cannot fully call but can go all-in with your remaining chips, prefer going all-in instead of folding when reasonable.
-    - Only choose FOLD when you truly cannot or should not pay the call.
+    - FOLD when you truly cannot or should not pay the call.
 
     Options (reply using the JSON at the end):
     1. FOLD - Give up your hand (amount: 0)
@@ -224,7 +224,7 @@ class PokerAI:
     3. RAISE - Increase the bet (amount: more than {call_amount})
 
     Guidance:
-    - Be selective with raises: raise with pairs, strong draws, or to steal small pots.
+    - Be selective with raises: raise with pairs, strong draws, or to steal small pots. :)
     - Prefer calling when marginal; avoid unnecessary folds that surrender the pot when you could at least contest it.
 
     Respond with JSON: {{"action": "fold/call/raise", "amount": number}}
