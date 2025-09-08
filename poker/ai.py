@@ -200,35 +200,35 @@ class PokerAI:
         current_bet = max(bets.values()) if bets else 0
         my_bet = bets.get(self.player.name, 0)
         call_amount = max(current_bet - my_bet, 0)
-        
+
         prompt = f"""
-POKER GAME STATE:
-- Your hand: {hand_str}
-- Community cards: {community_str}
-- Your chips: {self.player.chips}
-- Pot size: {pot}
-- Current highest bet: {current_bet}
-- Your current bet: {my_bet}
-- Amount to call: {call_amount}
-- Number of players: {len(players)}
+    POKER GAME STATE:
+    - Your hand: {hand_str}
+    - Community cards: {community_str}
+    - Your chips: {self.player.chips}
+    - Pot size: {pot}
+    - Current highest bet: {current_bet}
+    - Your current bet: {my_bet}
+    - Amount to call: {call_amount}
+    - Number of players: {len(players)}
 
-BETTING ROUND: {"Preflop" if not community else f"Post-flop ({len(community)} cards)"}
+    BETTING ROUND: {"Preflop" if not community else f"Post-flop ({len(community)} cards)"}
 
-Your options:
-1. FOLD - Give up your hand (amount: 0)
-2. CALL - Match the current bet (amount: {call_amount})
-3. RAISE - Increase the bet (amount: more than {call_amount})
+    Important rules (follow these strictly):
+    - If you cannot fully call but can go all-in with your remaining chips, prefer going all-in instead of folding when reasonable.
+    - Only choose FOLD when you truly cannot or should not pay the call.
 
-PLAY FAIRLY AGGRESSIVELY (but within reason please)! You should raise to build pots and put pressure on opponents. Consider raising with:
-- Any pair
-- Suited connectors
-- Drawing hands
-- Bluffs to steal pots
+    Options (reply using the JSON at the end):
+    1. FOLD - Give up your hand (amount: 0)
+    2. CALL - Match the current bet (amount: {call_amount})
+    3. RAISE - Increase the bet (amount: more than {call_amount})
 
-Be bold and raise! Don't just call - RAISE to win (don't be TOO aggressive though; you have limited money)!
+    Guidance:
+    - Be selective with raises: raise with pairs, strong draws, or to steal small pots.
+    - Prefer calling when marginal; avoid unnecessary folds that surrender the pot when you could at least contest it.
 
-Respond with JSON: {{"action": "fold/call/raise", "amount": number}}
-"""
+    Respond with JSON: {{"action": "fold/call/raise", "amount": number}}
+    """
         return prompt
 
     def _format_cards(self, cards) -> str:
@@ -282,18 +282,27 @@ Respond with JSON: {{"action": "fold/call/raise", "amount": number}}
         my_bet = bets.get(self.player.name, 0)
         call_amount = max(current_bet - my_bet, 0)
         
-        # Validate amounts
+        # Validate amounts and prefer calling/all-in over folding when possible.
         if action == 'fold':
-            amount = 0
+            # If folding but we can afford the call, convert to call instead
+            if call_amount > 0 and self.player.chips >= call_amount:
+                action = 'call'
+                amount = call_amount
+            else:
+                amount = 0
         elif action == 'call':
-            amount = call_amount
+            # Cap call to available chips (will become all-in in the engine if short)
+            amount = min(call_amount, self.player.chips)
         elif action == 'raise':
             # Honor AI's raise amount if it's at least a valid raise
             min_raise = call_amount + 1  # Minimum raise is just 1 more than call
             if amount < min_raise:
                 amount = min_raise
-            # Ensure we have enough chips
+            # If amount exceeds our chips, prefer going all-in (cap) rather than folding
             if amount > self.player.chips:
+                amount = self.player.chips
+            # If after capping we no longer meet a raise (i.e. amount <= call), fall back to call or fold
+            if amount <= call_amount:
                 if call_amount <= self.player.chips:
                     action = 'call'
                     amount = call_amount
@@ -387,11 +396,15 @@ Respond with JSON: {{"action": "fold/call/raise", "amount": number}}
 
         # If low chips, conserve
         if chips < 50:
-            decision = {'action': 'fold', 'amount': 0}
+            # Prefer to call small amounts when short-stacked rather than folding outright
+            if call_amount <= chips and call_amount > 0:
+                decision = {'action': 'call', 'amount': call_amount}
+            else:
+                decision = {'action': 'fold', 'amount': 0}
             logging.debug(f"🤖 DEBUG [{self.player.name}] Simple AI decision (low chips): {decision}")
             return decision
 
-            # default to check/call
-            decision = {'action': 'call', 'amount': call_amount}
-            logging.debug(f"🤖 DEBUG [{self.player.name}] Simple AI decision: {decision}")
-            return decision
+        # default to check/call
+        decision = {'action': 'call', 'amount': call_amount}
+        logging.debug(f"🤖 DEBUG [{self.player.name}] Simple AI decision: {decision}")
+        return decision
