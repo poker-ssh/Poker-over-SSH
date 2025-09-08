@@ -519,22 +519,71 @@ class Game:
             elif val == best_val:
                 winners.append(p.name)
 
-        # Distribute the pot money to the winners
-        if winners and self.pot > 0:
-            winnings_per_player = self.pot // len(winners)
-            remainder = self.pot % len(winners)
-            
-            for i, winner_name in enumerate(winners):
-                # Find the winner player object
-                winner_player = next((p for p in self.players if p.name == winner_name), None)
-                if winner_player:
-                    # Give each winner their share
-                    winner_player.chips += winnings_per_player
-                    self._sync_wallet_balance(winner_player)  # Sync wallet after winnings
-                    # Give remainder to first winner(s) to avoid losing cents
-                    if i < remainder:
+        # Distribute the pot money to the winners.
+        # This implements basic side-pot handling so players who were all-in
+        # for a smaller amount cannot win chips they didn't contest.
+        # Build side-pots from the recorded bets and award each side-pot to
+        # the best eligible contender(s).
+        if self.pot > 0 and self.bets:
+            # Copy bets so we can consume them when constructing side-pots
+            remaining = {name: amt for name, amt in self.bets.items()}
+            side_pots = []  # list of (amount, eligible_player_names)
+
+            # Construct side-pots by repeatedly taking the smallest non-zero
+            # contribution and forming a pot with all players who still have
+            # a remaining contribution.
+            while any(amt > 0 for amt in remaining.values()):
+                nonzero = [amt for amt in remaining.values() if amt > 0]
+                if not nonzero:
+                    break
+                min_bet = min(nonzero)
+                contributors = [name for name, amt in remaining.items() if amt > 0]
+                pot_amount = min_bet * len(contributors)
+                # Eligible players for this side-pot are those contributors
+                # who have not folded/eliminated (i.e. contenders)
+                eligible = [name for name in contributors if name in results]
+                side_pots.append((pot_amount, eligible))
+                # Subtract the min_bet from each contributor
+                for name in contributors:
+                    remaining[name] -= min_bet
+
+            # Now award each constructed side-pot to the best eligible contender(s)
+            awarded_any = set()
+            for pot_amount, eligible in side_pots:
+                if pot_amount <= 0 or not eligible:
+                    continue
+                # Determine best hand(s) among eligible players
+                best_val_local = None
+                local_winners = []
+                for name in eligible:
+                    val = results.get(name)
+                    if val is None:
+                        continue
+                    if best_val_local is None or val > best_val_local:
+                        best_val_local = val
+                        local_winners = [name]
+                    elif val == best_val_local:
+                        local_winners.append(name)
+
+                if not local_winners:
+                    continue
+
+                share = pot_amount // len(local_winners)
+                rem = pot_amount % len(local_winners)
+                for i, winner_name in enumerate(local_winners):
+                    winner_player = next((p for p in self.players if p.name == winner_name), None)
+                    if not winner_player:
+                        continue
+                    winner_player.chips += share
+                    self._sync_wallet_balance(winner_player)
+                    if i < rem:
                         winner_player.chips += 1
-                        self._sync_wallet_balance(winner_player)  # Sync wallet after remainder
+                        self._sync_wallet_balance(winner_player)
+                    awarded_any.add(winner_name)
+
+            # For backward compatibility, return the list of players who
+            # received any chips as the 'winners' field.
+            winners = list(awarded_any)
 
         return {'winners': winners, 'pot': self.pot, 'hands': all_player_results, 'all_hands': {p.name: p.hand for p in self.players}}
 
