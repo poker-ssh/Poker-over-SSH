@@ -311,7 +311,7 @@ Respond with JSON: {{"action": "fold/call/raise", "amount": number}}
         pot = game_state.get('pot', 0)
         
         # Calculate thinking time based on complexity (shorter than before)
-        base_delay = 0.8  # Reduced from 1.0
+        base_delay = 0.5  # Reduced from 1.0
         
         # More community cards = slightly more thinking
         if community:
