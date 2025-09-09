@@ -9,6 +9,7 @@ from typing import Optional, Dict, Any
 from poker.terminal_ui import Colors
 from poker.rooms import RoomManager
 from poker.server_info import get_server_info
+from poker.commands import CommandHandler
 
 
 try:
@@ -38,6 +39,9 @@ class RoomSession:
         self._username = username
         self._auto_seated = False
         self._current_room = "default"  # Default room
+        
+        # Initialize command handler
+        self._command_handler = CommandHandler(self)
         
         # Send welcome message
         try:
@@ -229,110 +233,7 @@ class RoomSession:
 
     async def _process_command(self, cmd: str):
         """Process user commands."""
-        # Log all user commands for debugging
-        logging.debug(f"User {self._username} in room {self._current_room} executed command: '{cmd}'")
-        
-        if not cmd:
-            try:
-                self._stdout.write("❯ ")
-                await self._stdout.drain()
-            except Exception:
-                pass
-            return
-
-        if cmd.lower() in ("quit", "exit"):
-            logging.debug(f"User {self._username} disconnecting")
-            try:
-                self._stdout.write("Goodbye!\r\n")
-                await self._stdout.drain()
-            except Exception:
-                pass
-            await self._stop()
-            return
-
-        # Handle roomctl commands
-        if cmd.lower().startswith("roomctl"):
-            logging.debug(f"User {self._username} executing roomctl command: {cmd}")
-            await self._handle_roomctl(cmd)
-            return
-
-        if cmd.lower() == "help":
-            logging.debug(f"User {self._username} requested help")
-            await self._show_help()
-            return
-
-        if cmd.lower() == "whoami":
-            logging.debug(f"User {self._username} requested whoami")
-            await self._show_whoami()
-            return
-
-        if cmd.lower() == "server":
-            logging.debug(f"User {self._username} requested server info")
-            await self._show_server_info()
-            return
-
-        if cmd.lower() == "players":
-            logging.debug(f"User {self._username} requested players list")
-            await self._show_players()
-            return
-
-        if cmd.lower() == "seat":
-            logging.debug(f"User {self._username} attempting to seat")
-            await self._handle_seat(cmd)
-            return
-
-        if cmd.lower().startswith("seat "):
-            # Reject seat commands with arguments
-            logging.debug(f"User {self._username} tried seat with arguments: {cmd}")
-            self._stdout.write(f"❌ {Colors.RED}The 'seat' command no longer accepts arguments.{Colors.RESET}\r\n")
-            self._stdout.write(f"💡 Just type '{Colors.GREEN}seat{Colors.RESET}' to use your SSH username ({self._username or 'not available'})\r\n\r\n")
-            self._stdout.write(f"💡 Or disconnect and connect with a different username: {Colors.GREEN}ssh <other_username>@{get_ssh_connection_string()}{Colors.RESET}\r\n\r\n❯ ")
-            await self._stdout.drain()
-            return
-
-        if cmd.lower() == "start":
-            logging.debug(f"User {self._username} attempting to start game")
-            await self._handle_start()
-            return
-
-        if cmd.lower() == "wallet":
-            logging.debug(f"User {self._username} requesting wallet info")
-            await self._handle_wallet()
-            return
-
-        if cmd.lower().startswith("wallet "):
-            logging.debug(f"User {self._username} executing wallet command: {cmd}")
-            await self._handle_wallet_command(cmd)
-            return
-
-        if cmd.lower().startswith("registerkey"):
-            logging.debug(f"User {self._username} registering SSH key")
-            await self._handle_register_key(cmd)
-            return
-
-        if cmd.lower().startswith("listkeys"):
-            logging.debug(f"User {self._username} listing SSH keys")
-            await self._handle_list_keys(cmd)
-            return
-
-        if cmd.lower().startswith("removekey"):
-            logging.debug(f"User {self._username} removing SSH key")
-            await self._handle_remove_key(cmd)
-            return
-
-        if cmd.lower() in ("togglecards", "tgc"):
-            logging.debug(f"User {self._username} toggling card visibility")
-            await self._handle_toggle_cards()
-            return
-
-        # Unknown command
-        logging.debug(f"User {self._username} used unknown command: {cmd}")
-        try:
-            self._stdout.write(f"❓ Unknown command: {cmd}\r\n")
-            self._stdout.write(f"💡 Type '{Colors.GREEN}help{Colors.RESET}' for available commands.\r\n\r\n❯ ")
-            await self._stdout.drain()
-        except Exception:
-            pass
+        await self._command_handler.process_command(cmd)
 
     async def _handle_roomctl(self, cmd: str):
         """Handle room control commands."""
