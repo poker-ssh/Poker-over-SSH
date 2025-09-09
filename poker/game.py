@@ -581,9 +581,10 @@ class Game:
                         self._sync_wallet_balance(winner_player)
                     awarded_any.add(winner_name)
 
-            # For backward compatibility, return the list of players who
-            # received any chips as the 'winners' field.
-            winners = list(awarded_any)
+            # Return the actual best hand winners for display purposes,
+            # not just everyone who received chips from side-pots
+            # Keep the original hand-based winners for display
+            pass  # winners already contains the best overall hands
 
         return {'winners': winners, 'pot': self.pot, 'hands': all_player_results, 'all_hands': {p.name: p.hand for p in self.players}}
 
