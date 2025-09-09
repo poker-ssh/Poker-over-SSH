@@ -58,12 +58,47 @@ class RoomSession:
             else:
                 self._stdout.write(f"⚠️  {Colors.YELLOW}No SSH username detected. To play, reconnect with: ssh <username>@{server_info['ssh_connection_string']}{Colors.RESET}\r\n")
                 self._stdout.write(f"💡 Type '{Colors.GREEN}help{Colors.RESET}' for commands.\r\n")
-            # Rounded Unicode box; legal disclaimer
+            # Rounded Unicode box; legal disclaimer (LGPL-2.1 or later)
+            # Explicitly wrapped visible lines (inner width 73), with bold segments
+            v1 = "This program is free software: you can redistribute it and/or modify it"
+            v2 = "under the terms of the GNU Lesser General Public License as published by"
+            v3 = "the Free Software Foundation, either version 2.1 of the License, or"
+            v4 = "(at your option) any later version."
+            v5 = ""
+            v6 = "This program is distributed in the hope that it will be useful, but"
+            v7 = "WITHOUT ANY WARRANTY; without even the implied warranty of"
+            v8 = "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU"
+            v9 = "Lesser General Public License for more details."
+
+            # helper to pad to inner width
+            pad = lambda s: s.ljust(73)
+
+            # Insert bold for specific substrings by splitting where needed
+            # v1: bold the opening phrase
+            opening = 'This program is free software:'
+            after_open = v1[len(opening):]
+
+            # v2: bold license name inside the line
+            pre_license = 'under the terms of the '
+            license_name = 'GNU Lesser General Public License'
+            post_license = v2[len(pre_license) + len(license_name):]
+
+            # v7: bold warranty phrase at start
+            warranty = 'WITHOUT ANY WARRANTY'
+            after_warranty = v7[len(warranty):]
+
             self._stdout.write(
-                f"{Colors.RED}╭───────────────────────────────────────────────────────────────────╮\r\n"
-                f"│{Colors.BOLD}{Colors.CYAN} Poker over SSH IS PROVIDED 'AS-IS', with ABSOLUTELY NO WARRANTY,  {Colors.RESET}{Colors.RED}│\r\n"
-                f"│{Colors.BOLD}{Colors.CYAN} to the extent permitted by applicable law.                        {Colors.RESET}{Colors.RED}│\r\n"
-                f"╰───────────────────────────────────────────────────────────────────╯{Colors.RESET}\r\n\r\n"
+                f"{Colors.RED}╭──────────────────────────────────────────────────────────────────────────╮\r\n"
+                f"│{Colors.CYAN} {Colors.BOLD}{opening}{Colors.RESET}{Colors.CYAN}{after_open.ljust(73 - len(opening))}{Colors.RESET}{Colors.RED}│\r\n"
+                f"│{Colors.CYAN} {pre_license}{Colors.BOLD}{license_name}{Colors.RESET}{Colors.CYAN}{post_license.ljust(73 - len(pre_license) - len(license_name))}{Colors.RESET}{Colors.RED}│\r\n"
+                f"│{Colors.CYAN} {pad(v3)}{Colors.RESET}{Colors.RED}│\r\n"
+                f"│{Colors.CYAN} {pad(v4)}{Colors.RESET}{Colors.RED}│\r\n"
+                f"│{Colors.CYAN} {pad(v5)}{Colors.RESET}{Colors.RED}│\r\n"
+                f"│{Colors.CYAN} {pad(v6)}{Colors.RESET}{Colors.RED}│\r\n"
+                f"│{Colors.CYAN} {Colors.BOLD}{warranty}{Colors.RESET}{Colors.CYAN}{after_warranty.ljust(73 - len(warranty))}{Colors.RESET}{Colors.RED}│\r\n"
+                f"│{Colors.CYAN} {pad(v8)}{Colors.RESET}{Colors.RED}│\r\n"
+                f"│{Colors.CYAN} {pad(v9)}{Colors.RESET}{Colors.RED}│\r\n"
+                f"╰──────────────────────────────────────────────────────────────────────────╯{Colors.RESET}\r\n\r\n"
             )
             self._stdout.write(f"{Colors.DIM}Copyleft {Colors.BOLD}(LGPL-2.1){Colors.RESET}{Colors.DIM}, Poker over SSH and contributors{Colors.RESET}\r\n")
             # Point users to the official LGPL-2.1 text
