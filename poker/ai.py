@@ -224,7 +224,7 @@ class PokerAI:
     3. RAISE - Increase the bet (amount: more than {call_amount})
 
     Guidance:
-    - Be selective with raises: raise with pairs, strong draws, or to steal small pots. :)
+    - Be selective with raises: raise with pairs, Ace high, strong draws, or to steal pots. :)
     - Prefer calling when marginal; avoid unnecessary folds that surrender the pot when you could at least contest it.
 
     Respond with JSON: {{"action": "fold/call/raise", "amount": number}}
