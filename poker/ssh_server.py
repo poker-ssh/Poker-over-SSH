@@ -1726,7 +1726,15 @@ class RoomSession:
                             all_hands = result.get('all_hands', {})
                             
                             if hands:
+                                # Only show hands of players who didn't fold (were contenders)
+                                contenders = [p for p in players if p.state not in ['folded', 'eliminated']]
+                                contender_names = {p.name for p in contenders}
+                                
                                 for pname, handval in hands.items():
+                                    # Skip folded players in the final hand display
+                                    if pname not in contender_names:
+                                        continue
+                                        
                                     hand_rank, tiebreakers = handval
                                     
                                     # Get descriptive hand name
