@@ -284,8 +284,12 @@ class PokerAI:
         
         # Validate amounts and prefer calling/all-in over folding when possible.
         if action == 'fold':
-            # If folding but we can afford the call, convert to call instead
-            if call_amount > 0 and self.player.chips >= call_amount:
+            # Only convert fold to call if call amount is very small (<= 10% of stack)
+            if (
+                call_amount > 0
+                and self.player.chips >= call_amount
+                and call_amount <= 0.1 * self.player.chips
+            ):
                 action = 'call'
                 amount = call_amount
             else:
