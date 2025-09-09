@@ -268,54 +268,168 @@ if asyncssh:
         def __init__(self, stdin, stdout, stderr, server_state=None, username=None, **kwargs):
             RoomSession.__init__(self, stdin, stdout, stderr, server_state, username)
             # Don't call SSHServerSession.__init__ as it's handled by asyncssh
+
+    class _RoomSSHServer(asyncssh.SSHServer):
+        """SSH server with proper authentication."""
         
         def connection_made(self, conn):
-            """Called when SSH connection is established."""
-            logging.debug(f"SSH connection made for {self._username}")
-            # This is called by asyncssh framework
-        
+            """Called when a new SSH connection is established."""
+            self._conn = conn
+            # Store connection for later banner sending
+            logging.debug("SSH connection established")
+
         def password_auth_supported(self):
-            """Indicate that password authentication is supported."""
-            return True
-        
-        def public_key_auth_supported(self):
-            """Indicate that public key authentication is supported."""
-            return True
-        
-        def validate_public_key(self, username, key):
-            """Validate public key for authentication."""
-            try:
-                from poker.database import Database
-                db = Database()
-                
-                # Convert key to string format
-                key_data = key.export_public_key().decode()
-                
-                # Check if this key is registered for this user
-                user_keys = db.list_ssh_keys(username)
-                for user_key in user_keys:
-                    if user_key['key_data'] == key_data:
-                        logging.info(f"Public key authentication successful for {username}")
-                        return True
-                
-                logging.warning(f"Public key authentication failed for {username} - key not registered")
-                return False
-                
-            except Exception as e:
-                logging.error(f"Error validating public key for {username}: {e}")
-                return False
-        
-        def public_key_auth(self, username, key):
-            """Handle public key authentication."""
-            if self.validate_public_key(username, key):
-                self._username = username
-                logging.info(f"User {username} authenticated via public key")
-                return True
+            """Password authentication is disabled by default for security."""
             return False
-        
-        def auth_banner_supported(self):
-            """Indicate that authentication banner is supported."""
+
+        def public_key_auth_supported(self):
+            """Public key authentication is preferred."""
             return True
+
+        def validate_public_key(self, username, key):
+            """Validate if a public key is acceptable for the user."""
+            try:
+                from poker.database import get_database
+                
+                # Get the database instance
+                db = get_database()
+                
+                # Convert key to string format for storage/comparison
+                if hasattr(key, 'export_public_key'):
+                    # AsyncSSH key object
+                    key_str = key.export_public_key().decode('utf-8').strip()
+                else:
+                    # Already a string
+                    key_str = str(key).strip()
+                
+                # Extract key type and comment from the key string
+                key_parts = key_str.split()
+                if len(key_parts) >= 2:
+                    key_type = key_parts[0]
+                    key_data = key_parts[1]
+                    key_comment = key_parts[2] if len(key_parts) > 2 else ""
+                else:
+                    key_type = "unknown"
+                    key_data = key_str
+                    key_comment = ""
+                
+                # CRITICAL SECURITY CHECK: Verify SSH key ownership atomically
+                existing_owner = db.get_key_owner(key_str)
+                
+                if existing_owner:
+                    # Key is already registered to someone
+                    if existing_owner == username:
+                        # This key belongs to this username - allow validation
+                        db.update_key_last_used(username, key_str)
+                        logging.info(f"✅ SSH key validation successful for user: {username}")
+                        return True
+                    else:
+                        # Key belongs to different username - SECURITY VIOLATION
+                        logging.warning(f"🔒 SSH key validation DENIED for user: {username} - key already registered under username '{existing_owner}'")
+                        return False
+                else:
+                    # Key is not registered anywhere
+                    # Check if this username already has different keys registered
+                    existing_keys = db.get_authorized_keys(username)
+                    
+                    if existing_keys:
+                        # Username already exists with different keys - deny this new key
+                        logging.warning(f"🔒 SSH key validation DENIED for user: {username} - username already has {len(existing_keys)} different key(s) registered")
+                        return False
+                    
+                    # Username is new and key is new - register and allow
+                    success = db.register_ssh_key(username, key_str, key_type, key_comment)
+                    if success:
+                        logging.info(f"🔑 Auto-registered new SSH key for user: {username} (type: {key_type})")
+                        return True
+                    else:
+                        # Registration failed - check if someone else registered it concurrently
+                        existing_owner = db.get_key_owner(key_str)
+                        if existing_owner == username:
+                            logging.info(f"✅ SSH key validation successful for user: {username} (registered concurrently)")
+                            return True
+                        else:
+                            logging.error(f"❌ SSH key validation failed for user: {username} - registration failed")
+                            return False
+                    
+            except Exception as e:
+                logging.error(f"❌ Error during SSH key validation for {username}: {e}")
+                return False
+
+        def keyboard_interactive_auth_supported(self):
+            """Enable keyboard-interactive as fallback."""
+            return True
+
+        def get_kbdint_challenge(self, username, lang, submethods):
+            """Get keyboard-interactive auth challenge."""
+            title = f"🏠 Poker-over-SSH Login"
+            instructions = (
+                f"Welcome to Poker-over-SSH server!\n"
+                f"Please enter your username below to connect.\n\n"
+                f"💡 SSH public key authentication is recommended for security.\n"
+                f"After login, use 'registerkey' command to add your SSH public key.\n\n"
+                if username != "healthcheck" else
+                    "Press Enter to close this connection..."
+                )
+            
+            # Return challenge with one prompt that will be displayed
+            prompts = [("", False)]  # Empty prompt, no echo
+            return title, instructions, 'en-US', prompts
+        
+        def validate_kbdint_response(self, username, responses):
+            """Always reject keyboard-interactive to force public key auth."""
+            return False
+
+        def password_auth_supported(self):
+            return False
+
+        def public_key_auth_supported(self):
+            return True
+
+        def begin_auth(self, username):
+            # Called when auth begins for a username. We log the attempt here but
+            # do not set any global state. The session factory receives the
+            # authenticated username from asyncssh and will pass it to RoomSession.
+            try:
+                peer_ip = peer_port = None
+                transport = getattr(self, '_transport', None)
+                if transport is not None:
+                    peer = transport.get_extra_info('peername')
+                    if peer:
+                        peer_ip, peer_port = peer[0], peer[1]
+            except Exception:
+                peer_ip = peer_port = None
+
+            ip_info = f" from {peer_ip}:{peer_port}" if peer_ip and peer_port else ""
+            if username == "healthcheck":
+                # Allow the special healthcheck user to proceed without auth (used by health probes)
+                return False
+            else:
+                # Send auth banner using AsyncSSH's connection method
+                try:
+                    banner = self.get_auth_banner()
+                    if banner and hasattr(self, '_conn') and self._conn:
+                        # Use AsyncSSH's built-in banner sending method
+                        self._conn.send_auth_banner(banner)
+                        logging.info(f"Sent auth banner to {username}")
+                except Exception as e:
+                    logging.debug(f"Could not send auth banner to {username}: {e}")
+                    
+                # For all other usernames, require authentication (preferably public-key).
+                logging.info(f"Begin auth for user: {username}{ip_info} - SSH key authentication preferred")
+                
+                # Check if this user has any registered keys
+                try:
+                    from poker.database import get_database
+                    db = get_database()
+                    existing_keys = db.get_authorized_keys(username)
+                    if not existing_keys:
+                        logging.info(f"No registered SSH keys for {username} - will auto-register on first connection")
+                except Exception as e:
+                    logging.warning(f"Could not check existing keys for {username}: {e}")
+                
+                # Returning True signals asyncssh that authentication is required.
+                return True
         
         def get_auth_banner(self):
             """Get authentication banner."""
@@ -328,51 +442,14 @@ if asyncssh:
 {Colors.BOLD}Server:{Colors.RESET} {server_info.get('host', 'localhost')}:{server_info.get('port', 22222)}
 {Colors.BOLD}Version:{Colors.RESET} {server_info.get('version', 'Unknown')}
 
-{Colors.YELLOW}Authentication Methods:{Colors.RESET}
-• SSH Public Key (recommended)
-• Username/Password
+{Colors.YELLOW}SSH Public Key Authentication Preferred{Colors.RESET}
 
-{Colors.DIM}For SSH key auth, register your key after login with 'register-key'{Colors.RESET}
+{Colors.DIM}First-time users: Your SSH key will be auto-registered{Colors.RESET}
 """
             return banner
-        
-        def keyboard_interactive_auth_supported(self):
-            """Indicate that keyboard-interactive authentication is supported."""
-            return True
-        
-        def get_kbdint_challenge(self, username, lang, submethods):
-            """Get keyboard-interactive challenge."""
-            # Simple username/password challenge
-            return asyncssh.kbdint.KbdIntChallenge(
-                '',  # No instruction
-                '',  # No name  
-                [('Username: ', False), ('Password: ', True)]  # prompts
-            )
-        
-        def validate_kbdint_response(self, username, responses):
-            """Validate keyboard-interactive response."""
-            if len(responses) >= 1:
-                entered_username = responses[0]
-                self._username = entered_username
-                logging.info(f"User {entered_username} authenticated via keyboard-interactive")
-                return True
-            return False
-        
-        def password_auth_supported(self):
-            """Indicate that password authentication is supported."""
-            return True
-        
-        def public_key_auth_supported(self):
-            """Indicate that public key authentication is supported."""
-            return True
-        
-        def begin_auth(self, username):
-            """Begin authentication process."""
-            logging.debug(f"Beginning authentication for {username}")
-            return True
 
     _RoomSSHSession = _RoomSSHSession  # type: ignore
-    _RoomSSHServer = asyncssh.SSHServer  # type: ignore
+    _RoomSSHServer = _RoomSSHServer  # type: ignore
 else:
     # Fallback when asyncssh is not available
     _RoomSSHSession = RoomSession  # type: ignore
@@ -402,13 +479,24 @@ class SSHServer:
 
         # Create session factory
         def session_factory(stdin, stdout, stderr):
-            session = _RoomSSHSession(
-                stdin=stdin,
-                stdout=stdout, 
-                stderr=stderr,
-                server_state=self._server_state
-            )
-            return session
+            # For asyncssh, the username should be available through the connection
+            username = None
+            
+            # Try to get username from stdin's connection
+            if hasattr(stdin, 'channel') and hasattr(stdin.channel, 'connection'):
+                connection = stdin.channel.connection
+                if hasattr(connection, '_auth_username'):
+                    username = connection._auth_username
+                elif hasattr(connection, 'username'):
+                    username = connection.username
+                elif hasattr(connection, '_username'):
+                    username = connection._username
+            
+            # Try alternative ways to get the username
+            if not username and hasattr(stdin, 'get_extra_info'):
+                username = stdin.get_extra_info('username')
+                
+            return _RoomSSHSession(stdin, stdout, stderr, server_state=self._server_state, username=username)
 
         # Create server factory
         def server_factory():
@@ -417,12 +505,13 @@ class SSHServer:
         try:
             # Start SSH server
             logging.info(f"Starting SSH server on {self.host}:{self.port}")
-            self._server = await asyncssh.listen(
-                host=self.host,
-                port=self.port,
+            self._server = await asyncssh.create_server(
+                server_factory,
+                self.host,
+                self.port,
                 server_host_keys=[str(host_key_path)],
-                process_factory=session_factory,
-                server_factory=server_factory,
+                session_factory=session_factory,
+                reuse_address=True,
                 keepalive_interval=30,
                 keepalive_count_max=3
             )
@@ -442,5 +531,7 @@ class SSHServer:
     async def serve_forever(self) -> None:
         """Keep the server running forever."""
         await self.start()
-        if self._server:
-            await self._server.serve_forever()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            pass
