@@ -57,7 +57,7 @@ class RoomSession:
                 self._stdout.write(f"💡 Type '{Colors.GREEN}help{Colors.RESET}' for commands or '{Colors.GREEN}seat{Colors.RESET}' to join a game.\r\n")
             else:
                 self._stdout.write(f"⚠️  {Colors.YELLOW}No SSH username detected. To play, reconnect with: ssh <username>@{server_info['ssh_connection_string']}{Colors.RESET}\r\n")
-                self._stdout.write(f"💡 Type '{Colors.GREEN}help{Colors.RESET}' for commands.\r\n")
+                self._stdout.write(f"💡 Type '{Colors.GREEN}help{Colors.RESET}' for commands.\r\n\r\n")
             # Rounded Unicode box; legal disclaimer (LGPL-2.1 or later)
             # Explicitly wrapped visible lines (inner width 73), with bold segments
             v1 = "This program is free software: you can redistribute it and/or modify it"
