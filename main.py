@@ -49,6 +49,10 @@ if __name__ == "__main__":
         logging.basicConfig(level=logging.DEBUG)
     else:
         logging.basicConfig(level=logging.INFO)
+    
+    # Suppress AsyncSSH's verbose window change messages
+    asyncssh_logger = logging.getLogger('asyncssh')
+    asyncssh_logger.setLevel(logging.WARNING)
 
     try:
         asyncio.run(main(args.host, args.port))

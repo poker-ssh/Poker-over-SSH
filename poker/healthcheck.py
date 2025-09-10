@@ -245,6 +245,10 @@ async def start_healthcheck_in_background():
 if __name__ == '__main__':
     import argparse
     logging.basicConfig(level=logging.INFO)
+    
+    # Suppress AsyncSSH's verbose window change messages
+    asyncssh_logger = logging.getLogger('asyncssh')
+    asyncssh_logger.setLevel(logging.WARNING)
     parser = argparse.ArgumentParser()
     parser.add_argument('--host', default='0.0.0.0')
     args = parser.parse_args()

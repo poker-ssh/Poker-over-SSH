@@ -2369,6 +2369,10 @@ if __name__ == "__main__":
     import argparse
 
     logging.basicConfig(level=logging.INFO)
+    
+    # Suppress AsyncSSH's verbose window change messages
+    asyncssh_logger = logging.getLogger('asyncssh')
+    asyncssh_logger.setLevel(logging.WARNING)
     parser = argparse.ArgumentParser(description="Run a room-aware SSH server for Poker-over-SSH")
     parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
     parser.add_argument("--port", default=22222, type=int, help="Port to bind to")
