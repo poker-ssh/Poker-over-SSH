@@ -262,13 +262,13 @@ class PokerAI:
                 return {'action': 'raise', 'amount': amount}
             else:
                 # Default small raise
-                return {'action': 'raise', 'amount': 10}
+                return {'action': 'raise', 'amount': 5}
         else:
             # Default to call
             return {'action': 'call', 'amount': 0}
 
     def _validate_decision(self, decision: Dict[str, Any], game_state: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate and sanitize the AI decision"""
+        """Validate and sanitise the AI decision"""
         action = decision.get('action', 'fold').lower()
         amount = decision.get('amount', 0)
         
