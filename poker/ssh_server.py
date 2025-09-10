@@ -58,8 +58,8 @@ class RoomSession:
             else:
                 self._stdout.write(f"⚠️  {Colors.YELLOW}No SSH username detected. To play, reconnect with: ssh <username>@{server_info['ssh_connection_string']}{Colors.RESET}\r\n")
                 self._stdout.write(f"💡 Type '{Colors.GREEN}help{Colors.RESET}' for commands.\r\n\r\n")
-            # Rounded Unicode box; legal disclaimer (LGPL-2.1 or later)
-            # Explicitly wrapped visible lines (inner width 73), with bold segments
+
+            # These are the lines of the LGPL-2.1 license header
             v1 = "This program is free software: you can redistribute it and/or modify it"
             v2 = "under the terms of the GNU Lesser General Public License as published by"
             v3 = "the Free Software Foundation, either version 2.1 of the License, or"
