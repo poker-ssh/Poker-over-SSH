@@ -4,6 +4,7 @@ Handles multiple SSH sessions with room management.
 """
 
 import asyncio
+import errno
 import logging
 from typing import Optional, Dict, Any
 from poker.terminal_ui import Colors
@@ -1361,6 +1362,54 @@ class RoomSession:
                         self._stdout.write(f"\r\n⏰ {Colors.YELLOW}Time's up! Auto-folding...{Colors.RESET}\r\n")
                         await self._stdout.drain()
                         return {'action': 'fold', 'amount': 0}
+                    except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError) as e:
+                        # Connection issues - check if it's a terminal resize or real disconnection
+                        error_msg = str(e)
+                        if ("Terminal size change" in error_msg or 
+                            "SIGWINCH" in error_msg or
+                            "Window size" in error_msg or
+                            (hasattr(e, 'errno') and e.errno in (errno.EINTR, errno.EAGAIN, errno.EWOULDBLOCK))):
+                            # Terminal resize event - retry reading input
+                            logging.debug(f"Terminal resize detected during input read: {e}")
+                            try:
+                                # Re-render the game state after resize
+                                view = self._ui.render(game_state, player_hand=player.hand, action_history=action_history)
+                                self._stdout.write(f"\r{view}\r\n")
+                                self._stdout.write(f"\r\n{Colors.BOLD}Enter your action:{Colors.RESET} ")
+                                await self._stdout.drain()
+                                continue  # Continue the input loop
+                            except Exception:
+                                # If re-rendering fails, fold as a fallback
+                                logging.warning("Failed to handle terminal resize gracefully, folding player")
+                                return {'action': 'fold', 'amount': 0}
+                        else:
+                            # Real connection error - fold the player
+                            logging.info(f"Connection error during input read: {e}")
+                            return {'action': 'fold', 'amount': 0}
+                    except Exception as e:
+                        # Check if it might be a terminal resize related exception
+                        error_msg = str(e)
+                        if ("Terminal size change" in error_msg or 
+                            "SIGWINCH" in error_msg or
+                            "Window size" in error_msg or
+                            "resize" in error_msg.lower()):
+                            # Likely a terminal resize - try to continue gracefully
+                            logging.debug(f"Possible terminal resize exception: {e}")
+                            try:
+                                # Re-render the game state
+                                view = self._ui.render(game_state, player_hand=player.hand, action_history=action_history)
+                                self._stdout.write(f"\r{view}\r\n")
+                                self._stdout.write(f"\r\n{Colors.BOLD}Enter your action:{Colors.RESET} ")
+                                await self._stdout.drain()
+                                continue  # Continue the input loop
+                            except Exception:
+                                # If recovery fails, fold as last resort
+                                logging.warning(f"Failed to recover from potential terminal resize: {e}")
+                                return {'action': 'fold', 'amount': 0}
+                        else:
+                            # Unknown error during input - log it and fold
+                            logging.warning(f"Unexpected error during input read: {e}")
+                            return {'action': 'fold', 'amount': 0}
                         
                     if isinstance(line, bytes):
                         line = line.decode('utf-8', errors='ignore')
@@ -1492,9 +1541,34 @@ class RoomSession:
                     self._stdout.write("Enter your action: ")
                     await self._stdout.drain()
                     
-            except Exception:
-                # If any error occurs, fold to keep the game going
+            except (asyncio.CancelledError, KeyboardInterrupt):
+                # Session was cancelled or interrupted - fold the player
+                logging.info("Player session cancelled during action")
                 return {'action': 'fold', 'amount': 0}
+            except Exception as e:
+                # Final catch-all for any unhandled exceptions outside the input loop
+                error_msg = str(e)
+                if ("Terminal size change" in error_msg or 
+                    "SIGWINCH" in error_msg or
+                    "Window size" in error_msg or
+                    "resize" in error_msg.lower()):
+                    # Terminal resize at the actor level - try to restart the action process
+                    logging.debug(f"Terminal resize detected at actor level: {e}")
+                    try:
+                        # Re-render and restart the action prompt
+                        view = self._ui.render(game_state, player_hand=player.hand, action_history=action_history)
+                        self._stdout.write(f"\r{view}\r\n")
+                        self._stdout.write(f"\r\n{Colors.BOLD}Enter your action:{Colors.RESET} ")
+                        await self._stdout.drain()
+                        # Recursively call the actor function to restart the action process
+                        return await actor(game_state)
+                    except Exception:
+                        logging.warning("Failed to restart after terminal resize, folding player")
+                        return {'action': 'fold', 'amount': 0}
+                else:
+                    # Unknown error at actor level - log and fold
+                    logging.warning(f"Unexpected error in actor function: {e}")
+                    return {'action': 'fold', 'amount': 0}
 
         # assign actor to player
         player.actor = actor
@@ -1899,6 +1973,20 @@ class RoomSession:
     def window_change_requested(self, width, height, pixwidth, pixheight):
         """Handle terminal window size changes."""
         logging.debug(f"Window change: {width}x{height} ({pixwidth}x{pixheight} pixels)")
+        
+        # Store the new terminal size for potential future use
+        self._terminal_width = width
+        self._terminal_height = height
+        
+        # If we have a UI instance that's currently displaying a game, trigger a refresh
+        if hasattr(self, '_ui') and self._ui:
+            try:
+                # The UI will automatically adapt to the new terminal size
+                # We don't need to do anything special here as the next render will use the new size
+                logging.debug("Terminal resize detected - UI will refresh on next render")
+            except Exception as e:
+                logging.debug(f"Error during terminal resize handling: {e}")
+        
         # AsyncSSH handles the window change automatically, just need to acknowledge it
         return True
 
@@ -2281,6 +2369,10 @@ if __name__ == "__main__":
     import argparse
 
     logging.basicConfig(level=logging.INFO)
+    
+    # Suppress AsyncSSH's verbose window change messages
+    asyncssh_logger = logging.getLogger('asyncssh')
+    asyncssh_logger.setLevel(logging.WARNING)
     parser = argparse.ArgumentParser(description="Run a room-aware SSH server for Poker-over-SSH")
     parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
     parser.add_argument("--port", default=22222, type=int, help="Port to bind to")
