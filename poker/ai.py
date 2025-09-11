@@ -268,52 +268,21 @@ class PokerAI:
             return {'action': 'call', 'amount': 0}
 
     def _validate_decision(self, decision: Dict[str, Any], game_state: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate and sanitise the AI decision"""
-        action = decision.get('action', 'fold').lower()
-        amount = decision.get('amount', 0)
-        
-        # Ensure valid action
+        """Use AI's decision directly, only apply basic sanity checks."""
+        action = str(decision.get('action', 'fold')).lower()
+        amount = int(decision.get('amount', 0))
+
+        # Only allow valid actions
         if action not in ['fold', 'call', 'raise']:
-            action = 'call'
-        
-        # Calculate betting constraints
-        bets = game_state.get('bets', {})
-        current_bet = max(bets.values()) if bets else 0
-        my_bet = bets.get(self.player.name, 0)
-        call_amount = max(current_bet - my_bet, 0)
-        
-        # Validate amounts and prefer calling/all-in over folding when possible.
-        if action == 'fold':
-            # Only convert fold to call if call amount is very small (<= 10% of stack)
-            if (
-                call_amount > 0
-                and self.player.chips >= call_amount
-                and call_amount <= 0.1 * self.player.chips
-            ):
-                action = 'call'
-                amount = call_amount
-            else:
-                amount = 0
-        elif action == 'call':
-            # Cap call to available chips (will become all-in in the engine if short)
-            amount = min(call_amount, self.player.chips)
-        elif action == 'raise':
-            # Honor AI's raise amount if it's at least a valid raise
-            min_raise = call_amount + 1  # Minimum raise is just 1 more than call
-            if amount < min_raise:
-                amount = min_raise
-            # If amount exceeds our chips, prefer going all-in (cap) rather than folding
-            if amount > self.player.chips:
-                amount = self.player.chips
-            # If after capping we no longer meet a raise (i.e. amount <= call), fall back to call or fold
-            if amount <= call_amount:
-                if call_amount <= self.player.chips:
-                    action = 'call'
-                    amount = call_amount
-                else:
-                    action = 'fold'
-                    amount = 0
-        
+            action = 'fold'
+
+        # Chips sanity check
+        chips = self.player.chips
+        if amount < 0:
+            amount = 0
+        if amount > chips:
+            amount = chips
+
         return {'action': action, 'amount': amount}
 
     async def _simple_decision(self, game_state: Dict[str, Any]) -> Dict[str, Any]:
