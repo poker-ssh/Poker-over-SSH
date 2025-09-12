@@ -224,7 +224,7 @@ class PokerAI:
     3. RAISE - Increase the bet (amount: more than {call_amount})
 
     Guidance:
-    - Raise often when appropriate: raise with pairs, Ace high, strong draws, or to steal pots. :)
+    - Consider raising with strong hands (pairs, Ace high, suited connectors, strong draws), or to apply pressure and steal pots when opponents seem weak. Avoid reckless raises with weak hands.
     - Prefer calling when marginal; avoid unnecessary folds that surrender the pot when you could at least contest it.
 
     Respond with JSON: {{"action": "fold/call/raise", "amount": number}}
