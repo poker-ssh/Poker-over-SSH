@@ -73,7 +73,9 @@ class RoomSession:
             v9 = "Lesser General Public License for more details."
 
             # helper to pad to inner width
-            pad = lambda s: s.ljust(73)
+            def pad(s):
+                """Pad string to inner width for license box."""
+                return s.ljust(73)
 
             # Insert bold for specific substrings by splitting where needed
             # v1: bold the opening phrase
