@@ -61,6 +61,7 @@ class RoomSession:
                 self._stdout.write(f"💡 Type '{Colors.GREEN}help{Colors.RESET}' for commands.\r\n\r\n")
 
             # These are the lines of the LGPL-2.1 license header
+            # TODO Make this shorter
             v1 = "This program is free software: you can redistribute it and/or modify it"
             v2 = "under the terms of the GNU Lesser General Public License as published by"
             v3 = "the Free Software Foundation, either version 2.1 of the License, or"
