@@ -4,24 +4,19 @@ Handles multiple SSH sessions with room management.
 """
 
 import asyncio
-import errno
 import logging
-from typing import Optional, Dict, Any
-from poker.terminal_ui import Colors
-from poker.rooms import RoomManager
-from poker.server_info import get_server_info
-
+from typing import Optional
+from pathlib import Path
 
 try:
     import asyncssh
 except Exception:  # pragma: no cover - runtime dependency
     asyncssh = None
 
-
-def get_ssh_connection_string() -> str:
-    """Get the SSH connection string for this server"""
-    server_info = get_server_info()
-    return server_info['ssh_connection_string']
+# Import modular components
+from .session_manager import RoomServerState
+from .ssh_auth import RoomSSHServer
+from .ssh_session import RoomSSHSession
 
 
 class RoomSession:
