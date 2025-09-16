@@ -158,7 +158,7 @@ class SSHAuthentication:
                 "Welcome to Poker over SSH!\r\n"
                 f"Not working? MAKE SURE you have generated an SSH keypair: `ssh-keygen -N \"\" -t ed25519` (and press ENTER at all prompts), and you are really who you say you are!\r\n"
                 f"If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@{ssh_connection}\r\n\r\n"
-                f"For quick access without setting up SSH keys, you can use: ssh guest@{ssh_connection}\r\n"
+                f"For instant access without SSH keys or passwords, use: ssh guest@{ssh_connection}\r\n"
                 "Click on the HELP button on https://poker.qincai.xyz for detailed instructions.\r\n\r\n"
             )
         except Exception:
@@ -167,7 +167,7 @@ class SSHAuthentication:
                 "Welcome to Poker over SSH!\r\n"
                 "Not working? MAKE SURE you have generated an SSH keypair: `ssh-keygen -N \"\" -t ed25519` (and press ENTER at all prompts), and you are really who you say you are!\r\n"
                 "If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@<host> -p <port>\r\n\r\n"
-                "For quick access without setting up SSH keys, you can use: ssh guest@<host> -p <port>\r\n"
+                "For instant access without SSH keys or passwords, use: ssh guest@<host> -p <port>\r\n"
                 "Click on the HELP button on https://poker.qincai.xyz for detailed instructions.\r\n\r\n"
             )
 
@@ -182,7 +182,7 @@ class SSHAuthentication:
             instructions = (
                 f"Not working? MAKE SURE you have generated an SSH keypair: `ssh-keygen -N \"\" -t ed25519` (and press ENTER at all prompts), and you are really who you say you are!\r\n"
                 f"If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@{ssh_connection}\r\n\r\n"
-                f"For quick access without setting up SSH keys, you can use: ssh guest@{ssh_connection}\r\n"
+                f"For instant access without SSH keys or passwords, use: ssh guest@{ssh_connection}\r\n"
                 "Click on the HELP button on https://poker.qincai.xyz for detailed instructions.\r\n"
                 "\r\nThis server only accepts SSH key authentication.\r\n"
                 "Press Enter to close this connection..."
@@ -192,7 +192,7 @@ class SSHAuthentication:
             instructions = (
                 "Not working? MAKE SURE you have generated an SSH keypair: `ssh-keygen -N \"\" -t ed25519` (and press ENTER at all prompts), and you are really who you say you are!\r\n"
                 "If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@<host> -p <port>\r\n\r\n"
-                "For quick access without setting up SSH keys, you can use: ssh guest@<host> -p <port>\r\n"
+                "For instant access without SSH keys or passwords, use: ssh guest@<host> -p <port>\r\n"
                 "Click on the HELP button on https://poker.qincai.xyz for detailed instructions.\r\n"
                 "\r\nThis server only accepts SSH key authentication.\r\n"
                 "Press Enter to close this connection..."
@@ -219,9 +219,9 @@ class SSHAuthentication:
             # Allow the special healthcheck user to proceed without auth (used by health probes)
             return False
         elif username == "guest":
-            # Allow the guest user to proceed without strict authentication
-            logging.info(f"Begin auth for guest user{ip_info} - allowing flexible access")
-            return True  # Still require some form of auth, but will accept any key
+            # Allow the guest user to proceed without any authentication (passwordless and keyless)
+            logging.info(f"Begin auth for guest user{ip_info} - allowing passwordless and keyless access")
+            return False  # No authentication required at all
         else:
             # For all other usernames, require authentication (preferably public-key).
             logging.info(f"Begin auth for user: {username}{ip_info} - SSH key authentication preferred")
