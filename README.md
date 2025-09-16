@@ -19,7 +19,7 @@ In this repo there are: a self-hosted SSH server that runs the game and terminal
 Want to try the game right away? Connect to the public demo server:
 
 ```bash
-ssh play.poker.qincai.xyz -p 23456
+ssh play.poker.qincai.xyz
 ```
 
 > [!IMPORTANT]
