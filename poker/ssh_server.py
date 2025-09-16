@@ -65,7 +65,12 @@ if asyncssh:
             logging.debug("SSH connection established")
 
         def password_auth_supported(self):
-            return False
+            # Support password auth only for guest users
+            return True
+
+        def password_auth(self, username, password):
+            """Allow password authentication for guest users."""
+            return self.auth_handler.authenticate_password(username, password)
 
         def public_key_auth_supported(self):
             return True

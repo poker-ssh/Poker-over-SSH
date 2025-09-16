@@ -22,6 +22,11 @@ class SSHAuthentication:
     def validate_public_key(self, username, key):
         """Validate if a public key is acceptable for the user."""
         try:
+            # Special case: guest user can use any SSH key or no SSH key
+            if username == "guest":
+                logging.info(f"✅ SSH key validation successful for guest user")
+                return True
+            
             from poker.database import get_database
             
             # Get the database instance
@@ -89,9 +94,22 @@ class SSHAuthentication:
             logging.error(f"❌ Error during SSH key validation for {username}: {e}")
             return False
 
+    def authenticate_password(self, username, password):
+        """Verify password authentication for guest users."""
+        if username == "guest":
+            # For guest users, accept any password or no password
+            logging.info(f"✅ Password authentication successful for guest user")
+            return True
+        return False
+
     def authenticate_public_key(self, username, key):
         """Verify SSH public key authentication using the key sent by client."""
         try:
+            # Special case: guest user can use any SSH key or no SSH key
+            if username == "guest":
+                logging.info(f"✅ SSH key authentication successful for guest user")
+                return True
+            
             from poker.database import get_database
             
             # Get the database instance
@@ -139,7 +157,8 @@ class SSHAuthentication:
             return (
                 "Welcome to Poker over SSH!\r\n"
                 f"Not working? MAKE SURE you have generated an SSH keypair: `ssh-keygen -N \"\" -t ed25519` (and press ENTER at all prompts), and you are really who you say you are!\r\n"
-                f"If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@{ssh_connection}\r\n"
+                f"If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@{ssh_connection}\r\n\r\n"
+                f"For quick access without setting up SSH keys, you can use: ssh guest@{ssh_connection}\r\n"
                 "Click on the HELP button on https://poker.qincai.xyz for detailed instructions.\r\n\r\n"
             )
         except Exception:
@@ -147,7 +166,8 @@ class SSHAuthentication:
             return (
                 "Welcome to Poker over SSH!\r\n"
                 "Not working? MAKE SURE you have generated an SSH keypair: `ssh-keygen -N \"\" -t ed25519` (and press ENTER at all prompts), and you are really who you say you are!\r\n"
-                "If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@<host> -p <port>\r\n"
+                "If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@<host> -p <port>\r\n\r\n"
+                "For quick access without setting up SSH keys, you can use: ssh guest@<host> -p <port>\r\n"
                 "Click on the HELP button on https://poker.qincai.xyz for detailed instructions.\r\n\r\n"
             )
 
@@ -161,7 +181,8 @@ class SSHAuthentication:
             title = "Welcome to Poker over SSH!"
             instructions = (
                 f"Not working? MAKE SURE you have generated an SSH keypair: `ssh-keygen -N \"\" -t ed25519` (and press ENTER at all prompts), and you are really who you say you are!\r\n"
-                f"If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@{ssh_connection}\r\n"
+                f"If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@{ssh_connection}\r\n\r\n"
+                f"For quick access without setting up SSH keys, you can use: ssh guest@{ssh_connection}\r\n"
                 "Click on the HELP button on https://poker.qincai.xyz for detailed instructions.\r\n"
                 "\r\nThis server only accepts SSH key authentication.\r\n"
                 "Press Enter to close this connection..."
@@ -170,7 +191,8 @@ class SSHAuthentication:
             title = "Welcome to Poker over SSH!"
             instructions = (
                 "Not working? MAKE SURE you have generated an SSH keypair: `ssh-keygen -N \"\" -t ed25519` (and press ENTER at all prompts), and you are really who you say you are!\r\n"
-                "If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@<host> -p <port>\r\n"
+                "If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@<host> -p <port>\r\n\r\n"
+                "For quick access without setting up SSH keys, you can use: ssh guest@<host> -p <port>\r\n"
                 "Click on the HELP button on https://poker.qincai.xyz for detailed instructions.\r\n"
                 "\r\nThis server only accepts SSH key authentication.\r\n"
                 "Press Enter to close this connection..."
@@ -192,9 +214,14 @@ class SSHAuthentication:
             peer_ip = peer_port = None
 
         ip_info = f" from {peer_ip}:{peer_port}" if peer_ip and peer_port else ""
+        
         if username == "healthcheck":
             # Allow the special healthcheck user to proceed without auth (used by health probes)
             return False
+        elif username == "guest":
+            # Allow the guest user to proceed without strict authentication
+            logging.info(f"Begin auth for guest user{ip_info} - allowing flexible access")
+            return True  # Still require some form of auth, but will accept any key
         else:
             # For all other usernames, require authentication (preferably public-key).
             logging.info(f"Begin auth for user: {username}{ip_info} - SSH key authentication preferred")
