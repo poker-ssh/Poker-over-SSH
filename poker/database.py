@@ -292,7 +292,9 @@ class DatabaseManager:
     def log_transaction(self, player_name: str, transaction_type: str, amount: int,
                        balance_before: int, balance_after: int, description: str = '',
                        round_id: Optional[str] = None) -> int:
-        """Log a wallet transaction."""
+        """Log a wallet transaction. Ensures wallet exists to avoid FK errors."""
+        # Defensive: ensure wallet exists before inserting transaction
+        self.get_wallet(player_name)
         with self.get_cursor() as cursor:
             cursor.execute("""
                 INSERT INTO transactions 
@@ -301,7 +303,6 @@ class DatabaseManager:
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (player_name, transaction_type, amount, balance_before, balance_after,
                   time.time(), description, round_id))
-            
             return cursor.lastrowid or 0
     
     def get_player_actions(self, player_name: str, limit: int = 50) -> List[Dict[str, Any]]:
@@ -657,7 +658,13 @@ class DatabaseManager:
         can_claim, message = self.can_claim_bonus(player_name)
         if not can_claim:
             return False
-        
+        # Ensure wallet exists before we insert rows that reference wallets via foreign keys
+        try:
+            self.get_wallet(player_name)
+        except Exception:
+            # If wallet creation fails for some reason, abort claim
+            return False
+
         with self.get_cursor() as cursor:
             now = time.time()
             current_date = time.strftime("%Y-%m-%d", time.localtime(now))
