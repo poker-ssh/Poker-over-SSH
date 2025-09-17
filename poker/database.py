@@ -807,7 +807,15 @@ class DatabaseManager:
         """Get reset information for a guest account."""
         if not self.is_guest_account(username):
             return None
-
+        with self.get_cursor() as cursor:
+            cursor.execute(
+                "SELECT username, last_activity, last_reset, total_resets, created_at FROM guest_accounts WHERE username = ?",
+                (username,)
+            )
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
     def list_guest_usernames(self) -> List[str]:
         """Return a list of currently known guest usernames."""
         with self.get_cursor() as cursor:
