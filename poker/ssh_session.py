@@ -42,6 +42,28 @@ class RoomSession:
             
             self._stdout.write(motd + "\r\n")
             if username:
+                # Touch DB activity for guest accounts to keepalive
+                try:
+                    from poker.database import get_database
+                    db = get_database()
+                    if self._is_guest_account(username):
+                        db.touch_guest_activity(username)
+                except Exception:
+                    pass
+
+                # Check if this is a guest account that was recently reset
+                reset_notice = self._check_guest_reset_notice(username)
+                if reset_notice:
+                    self._stdout.write(reset_notice + "\r\n")
+
+                # If this session was auto-assigned from a plain 'guest', show assignment notice
+                try:
+                    if hasattr(self, '_assigned_from_guest') and self._assigned_from_guest:
+                        from poker.terminal_ui import Colors
+                        self._stdout.write(f"{Colors.GREEN}✅ You were auto-assigned the guest account: {username}{Colors.RESET}\r\n")
+                except Exception:
+                    pass
+                
                 self._stdout.write(f"🎭 Logged in as: {Colors.CYAN}{username}{Colors.RESET}\r\n")
                 self._stdout.write(f"💡 Type '{Colors.GREEN}help{Colors.RESET}' for commands or '{Colors.GREEN}seat{Colors.RESET}' to join a game.\r\n\r\n")
             else:
@@ -107,6 +129,43 @@ class RoomSession:
         # Start the input reading task
         self._reader_task = asyncio.create_task(self._read_input())
 
+    def _is_guest_account(self, username: str) -> bool:
+        """Check if username is a guest account (guest, guest1, guest2, etc.)."""
+        if username == "guest":
+            return True
+        if username.startswith("guest") and len(username) > 5:
+            # Check if the part after "guest" is numeric
+            suffix = username[5:]
+            return suffix.isdigit()
+        return False
+
+    def _check_guest_reset_notice(self, username: str) -> Optional[str]:
+        """Check if guest account was recently reset and return notice message."""
+        if not self._is_guest_account(username):
+            return None
+        
+        try:
+            from poker.database import get_database
+            from poker.terminal_ui import Colors
+            import time
+            
+            db = get_database()
+            reset_info = db.get_guest_reset_info(username)
+            
+            if reset_info and reset_info['last_reset'] > 0:
+                # Check if reset was recent (within last hour)
+                hours_since_reset = (time.time() - reset_info['last_reset']) / 3600
+                if hours_since_reset < 1.0:
+                    total_resets = reset_info['total_resets']
+                    return (
+                        f"{Colors.YELLOW}📝 NOTICE: Your guest account was reset due to inactivity!{Colors.RESET}\r\n"
+                        f"{Colors.YELLOW}   Fresh start with $500. This is reset #{total_resets}.{Colors.RESET}"
+                    )
+            return None
+        except Exception as e:
+            logging.error(f"Error checking guest reset notice for {username}: {e}")
+            return None
+
     def _is_session_active(self, session) -> bool:
         """Check if a session is still active and connected."""
         try:
@@ -140,7 +199,17 @@ class RoomSession:
                 logging.info(f"Auto-saved wallet for {self._username} during stop")
             except Exception as e:
                 logging.warning(f"Error auto-saving wallet for {self._username} during stop: {e}")
-        
+            # If this was a guest account, reset their data on disconnect so next session is fresh
+            try:
+                from poker.database import get_database
+                db = get_database()
+                if self._is_guest_account(self._username):
+                    # Reset the guest account to clear wallet, transactions, actions
+                    db.reset_guest_account(self._username)
+                    logging.info(f"Guest account {self._username} reset on disconnect")
+            except Exception as e:
+                logging.warning(f"Error resetting guest account for {self._username} during stop: {e}")
+
         self._should_exit = True
         self._running = False
 

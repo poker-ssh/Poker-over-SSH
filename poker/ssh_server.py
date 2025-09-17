@@ -183,8 +183,31 @@ class SSHServer:
             # Try alternative ways to get the username
             if not username and hasattr(stdin, 'get_extra_info'):
                 username = stdin.get_extra_info('username')
-                
-            return _RoomSSHSession(stdin, stdout, stderr, server_state=self._server_state, username=username)
+            # If user explicitly connected as 'guest', allocate a numbered guest account
+            try:
+                from poker.database import get_database
+                db = get_database()
+                if username == 'guest':
+                    allocated = db.allocate_guest_username()
+                    if allocated:
+                        username = allocated
+                # Touch activity for guest-like usernames
+                if username and db.is_guest_account(username):
+                    db.touch_guest_activity(username)
+            except Exception:
+                # If DB allocation fails, fall back to the original username
+                pass
+
+            session = _RoomSSHSession(stdin, stdout, stderr, server_state=self._server_state, username=username)
+            # Mark session if allocation happened from plain 'guest'
+            try:
+                if 'allocated' in locals() and allocated:
+                    setattr(session, '_assigned_from_guest', True)
+                else:
+                    setattr(session, '_assigned_from_guest', False)
+            except Exception:
+                pass
+            return session
 
         # Create server
         try:

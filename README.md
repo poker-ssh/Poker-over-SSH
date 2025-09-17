@@ -5,12 +5,12 @@ Lightweight, room-aware Texas Hold'em served over [SSH](https://en.wikipedia.org
 ## Overview
 
 - Protocol: SSH (terminal UI)
-- Game: Texas Hold'em (simple engine, no complex side-pot handling and small-big betting)
+- Game: Texas Hold'em (simple engine, no complex small-big betting, although one is planned)
 - AI: pluggable AI that uses a simple fallback strategy and can call an external OpenAI-compatible endpoint when configured (see [.env.example](.env.example))
 - Persistence: SQLite via `poker.database` (wallets, transactions, actions, health history)
-- Healthcheck: small HTTP probe service that verifies SSH reachability and exposes `/health` and `/history`
+- Healthcheck: small HTTP probe service that verifies SSH reachability and exposes `/health`
 
-In this repo there are: a self-hosted SSH server that runs the game and terminal UI (`poker/ssh_server.py`), a game engine (`poker/game.py`), room management (`poker/rooms.py`), player & wallet management (`poker/player.py`, `poker/wallet.py`), AI (`poker/ai.py`), a terminal renderer (`poker/terminal_ui.py`) and a persistent database module (`poker/database.py`).
+The codebase is organised into several modules: an SSH server and terminal UI (`poker/ssh_server.py`), the main game engine and logic (`poker/game.py`, `poker/game_engine.py`), room management (`poker/rooms.py`), player and wallet management (`poker/player.py`, `poker/wallet.py`), AI support (`poker/ai.py`), terminal rendering/UI (`poker/terminal_ui.py`), and persistent storage/database handling (`poker/database.py`). More modules provide features like health checks, backups, and SSH session management. See the `poker/` directory for details on all components.
 
 ## Play the public demo (fast)
 
@@ -35,8 +35,9 @@ ssh play.poker.qincai.xyz
 > - No one else has previously connected with your username.
 > - Permissions on your `~/.ssh` directory are set to `700`, and your key files to `600`.
 > - If you are still having issues, try connecting using a different username: `ssh <different_username>@play.poker.qincai.xyz`
+> Or if you are too lazy to set up SSH keys, try: `ssh guest@play.poker.qincai.xyz`
 
-Your SSH username will be used as your in-game name. This is a public demo instance — expect ephemeral data and occasional resets of database (oh and downtime). Don't use private keys when trying the demo.
+Your SSH username will be used as your in-game name. This is a public demo instance — expect ephemeral data and occasional resets of database (oh and downtime).
 
 ## Quickstart (local development)
 
@@ -99,7 +100,6 @@ The in-game action prompt supports `fold`, `call`, `check` (post-flop), `bet <am
 
 - A small HTTP service probes the SSH server and exposes endpoints:
   - `/health` — latest probe result (JSON)
-  - `/history` — recent probe history (JSON) (To be deprecated)
 
 This is started in the background by `main.py` via `start_healthcheck_in_background()`.
 
@@ -112,4 +112,4 @@ This is started in the background by `main.py` via `start_healthcheck_in_backgro
 
 ## License
 
-This project is provided under the terms in the `LICENSE` file (LGPL-2.1 or later). See `LICENSE` for the full license text.
+This project is provided under the terms in the `LICENSE` file (LGPL-2.1 or later). See [LICENSE](LICENSE) for the full license text.
