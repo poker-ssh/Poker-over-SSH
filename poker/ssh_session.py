@@ -42,10 +42,27 @@ class RoomSession:
             
             self._stdout.write(motd + "\r\n")
             if username:
+                # Touch DB activity for guest accounts to keepalive
+                try:
+                    from poker.database import get_database
+                    db = get_database()
+                    if self._is_guest_account(username):
+                        db.touch_guest_activity(username)
+                except Exception:
+                    pass
+
                 # Check if this is a guest account that was recently reset
                 reset_notice = self._check_guest_reset_notice(username)
                 if reset_notice:
                     self._stdout.write(reset_notice + "\r\n")
+
+                # If this session was auto-assigned from a plain 'guest', show assignment notice
+                try:
+                    if hasattr(self, '_assigned_from_guest') and self._assigned_from_guest:
+                        from poker.terminal_ui import Colors
+                        self._stdout.write(f"{Colors.GREEN}✅ You were auto-assigned the guest account: {username}{Colors.RESET}\r\n")
+                except Exception:
+                    pass
                 
                 self._stdout.write(f"🎭 Logged in as: {Colors.CYAN}{username}{Colors.RESET}\r\n")
                 self._stdout.write(f"💡 Type '{Colors.GREEN}help{Colors.RESET}' for commands or '{Colors.GREEN}seat{Colors.RESET}' to join a game.\r\n\r\n")
@@ -182,7 +199,17 @@ class RoomSession:
                 logging.info(f"Auto-saved wallet for {self._username} during stop")
             except Exception as e:
                 logging.warning(f"Error auto-saving wallet for {self._username} during stop: {e}")
-        
+            # If this was a guest account, reset their data on disconnect so next session is fresh
+            try:
+                from poker.database import get_database
+                db = get_database()
+                if self._is_guest_account(self._username):
+                    # Reset the guest account to clear wallet, transactions, actions
+                    db.reset_guest_account(self._username)
+                    logging.info(f"Guest account {self._username} reset on disconnect")
+            except Exception as e:
+                logging.warning(f"Error resetting guest account for {self._username} during stop: {e}")
+
         self._should_exit = True
         self._running = False
 

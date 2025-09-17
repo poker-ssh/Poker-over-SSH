@@ -807,6 +807,58 @@ class DatabaseManager:
         """Get reset information for a guest account."""
         if not self.is_guest_account(username):
             return None
+
+    def list_guest_usernames(self) -> List[str]:
+        """Return a list of currently known guest usernames."""
+        with self.get_cursor() as cursor:
+            cursor.execute("SELECT username FROM guest_accounts ORDER BY username")
+            return [row['username'] for row in cursor.fetchall()]
+
+    def allocate_guest_username(self, max_guest: int = 100) -> Optional[str]:
+        """Allocate the lowest available guest username (guest1..guestN).
+
+        Returns the allocated username (e.g., 'guest1') or None if none available.
+        """
+        with self.get_cursor() as cursor:
+            # find existing guest usernames
+            cursor.execute("SELECT username FROM guest_accounts")
+            existing = {row['username'] for row in cursor.fetchall()}
+
+            # Also include any wallets that start with guest (in case guest_accounts missing for some reason)
+            cursor.execute("SELECT player_name FROM wallets WHERE player_name LIKE 'guest%'")
+            existing.update({row['player_name'] for row in cursor.fetchall()})
+
+            # Try to find the lowest available guest number
+            for i in range(1, max_guest + 1):
+                candidate = f"guest{i}"
+                if candidate not in existing:
+                    now = time.time()
+                    cursor.execute("""
+                        INSERT OR REPLACE INTO guest_accounts
+                        (username, last_activity, last_reset, total_resets, created_at)
+                        VALUES (?, ?, COALESCE((SELECT last_reset FROM guest_accounts WHERE username = ?), 0),
+                                COALESCE((SELECT total_resets FROM guest_accounts WHERE username = ?), 0),
+                                COALESCE((SELECT created_at FROM guest_accounts WHERE username = ?), ?))
+                    """, (candidate, now, candidate, candidate, candidate, now))
+                    logging.info(f"Allocated guest username: {candidate}")
+                    return candidate
+
+            # No available guest found - oopsies
+            return None
+
+    def touch_guest_activity(self, username: str) -> None:
+        """Update last_activity for a guest username (create record if needed)."""
+        if not self.is_guest_account(username):
+            return
+        now = time.time()
+        with self.get_cursor() as cursor:
+            cursor.execute("""
+                INSERT OR REPLACE INTO guest_accounts
+                (username, last_activity, last_reset, total_resets, created_at)
+                VALUES (?, ?, COALESCE((SELECT last_reset FROM guest_accounts WHERE username = ?), 0),
+                        COALESCE((SELECT total_resets FROM guest_accounts WHERE username = ?), 0),
+                        COALESCE((SELECT created_at FROM guest_accounts WHERE username = ?), ?))
+            """, (username, now, username, username, username, now))
         
         with self.get_cursor() as cursor:
             cursor.execute(
