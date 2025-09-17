@@ -5,7 +5,7 @@ Lightweight, room-aware Texas Hold'em served over [SSH](https://en.wikipedia.org
 ## Overview
 
 - Protocol: SSH (terminal UI)
-- Game: Texas Hold'em (simple engine, no complex small-big betting)
+- Game: Texas Hold'em (simple engine, no complex small-big betting, although one is planned)
 - AI: pluggable AI that uses a simple fallback strategy and can call an external OpenAI-compatible endpoint when configured (see [.env.example](.env.example))
 - Persistence: SQLite via `poker.database` (wallets, transactions, actions, health history)
 - Healthcheck: small HTTP probe service that verifies SSH reachability and exposes `/health`
