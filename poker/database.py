@@ -816,6 +816,18 @@ class DatabaseManager:
             return None
         with self.get_cursor() as cursor:
             cursor.execute(
+                "SELECT last_reset, total_resets FROM guest_accounts WHERE username = ?",
+                (username,)
+            )
+            row = cursor.fetchone()
+            if row:
+                return {
+                    'last_reset': row['last_reset'],
+                    'total_resets': row['total_resets']
+                }
+            return None
+        with self.get_cursor() as cursor:
+            cursor.execute(
                 "SELECT username, last_activity, last_reset, total_resets, created_at FROM guest_accounts WHERE username = ?",
                 (username,)
             )
@@ -874,20 +886,6 @@ class DatabaseManager:
                         COALESCE((SELECT total_resets FROM guest_accounts WHERE username = ?), 0),
                         COALESCE((SELECT created_at FROM guest_accounts WHERE username = ?), ?))
             """, (username, now, username, username, username, now))
-        
-        with self.get_cursor() as cursor:
-            cursor.execute(
-                "SELECT last_reset, total_resets FROM guest_accounts WHERE username = ?",
-                (username,)
-            )
-            row = cursor.fetchone()
-            
-            if row:
-                return {
-                    'last_reset': row['last_reset'],
-                    'total_resets': row['total_resets']
-                }
-            return None
 
 
 # Global database instance
