@@ -188,7 +188,7 @@ class SSHAuthentication:
                 "Welcome to Poker over SSH!\r\n"
                 f"Not working? MAKE SURE you have generated an SSH keypair: `ssh-keygen -N \"\" -t ed25519` (and press ENTER at all prompts), and you are really who you say you are!\r\n"
                 f"If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@{ssh_connection}\r\n\r\n"
-                f"For instant access without SSH keys or passwords, use: ssh guest@{ssh_connection}\r\n"
+                f"For instant access without SSH keys or passwords, use: ssh guest@{ssh_connection} (or guest1, guest2, guest3, etc.)\r\n"
                 "Click on the HELP button on https://poker.qincai.xyz for detailed instructions.\r\n\r\n"
             )
         except Exception:
@@ -197,7 +197,7 @@ class SSHAuthentication:
                 "Welcome to Poker over SSH!\r\n"
                 "Not working? MAKE SURE you have generated an SSH keypair: `ssh-keygen -N \"\" -t ed25519` (and press ENTER at all prompts), and you are really who you say you are!\r\n"
                 "If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@<host> -p <port>\r\n\r\n"
-                "For instant access without SSH keys or passwords, use: ssh guest@<host> -p <port>\r\n"
+                "For instant access without SSH keys or passwords, use: ssh guest@<host> -p <port> (or guest1, guest2, guest3, etc.)\r\n"
                 "Click on the HELP button on https://poker.qincai.xyz for detailed instructions.\r\n\r\n"
             )
 
@@ -212,7 +212,7 @@ class SSHAuthentication:
             instructions = (
                 f"Not working? MAKE SURE you have generated an SSH keypair: `ssh-keygen -N \"\" -t ed25519` (and press ENTER at all prompts), and you are really who you say you are!\r\n"
                 f"If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@{ssh_connection}\r\n\r\n"
-                f"For instant access without SSH keys or passwords, use: ssh guest@{ssh_connection}\r\n"
+                f"For instant access without SSH keys or passwords, use: ssh guest@{ssh_connection} (or guest1, guest2, guest3, etc.)\r\n"
                 "Click on the HELP button on https://poker.qincai.xyz for detailed instructions.\r\n"
                 "\r\nThis server only accepts SSH key authentication.\r\n"
                 "Press Enter to close this connection..."
@@ -222,7 +222,7 @@ class SSHAuthentication:
             instructions = (
                 "Not working? MAKE SURE you have generated an SSH keypair: `ssh-keygen -N \"\" -t ed25519` (and press ENTER at all prompts), and you are really who you say you are!\r\n"
                 "If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@<host> -p <port>\r\n\r\n"
-                "For instant access without SSH keys or passwords, use: ssh guest@<host> -p <port>\r\n"
+                "For instant access without SSH keys or passwords, use: ssh guest@<host> -p <port> (or guest1, guest2, guest3, etc.)\r\n"
                 "Click on the HELP button on https://poker.qincai.xyz for detailed instructions.\r\n"
                 "\r\nThis server only accepts SSH key authentication.\r\n"
                 "Press Enter to close this connection..."
