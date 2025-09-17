@@ -133,6 +133,17 @@ class DatabaseManager:
                 )
             """)
             
+            # Guest accounts table - tracks guest account activity and reset status
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS guest_accounts (
+                    username TEXT PRIMARY KEY,
+                    last_activity REAL NOT NULL DEFAULT 0,
+                    last_reset REAL NOT NULL DEFAULT 0,
+                    total_resets INTEGER NOT NULL DEFAULT 0,
+                    created_at REAL NOT NULL DEFAULT 0
+                )
+            """)
+            
             # Create indexes for better performance
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_actions_player ON actions (player_name)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_actions_timestamp ON actions (timestamp)")
@@ -141,6 +152,7 @@ class DatabaseManager:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_daily_bonuses_player ON daily_bonuses (player_name)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_ssh_keys_username ON ssh_keys (username)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_ssh_keys_public_key ON ssh_keys (public_key)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_guest_accounts_activity ON guest_accounts (last_activity)")
             # Healthcheck history table - stores recent probe results for health UI
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS health_history (
@@ -708,6 +720,107 @@ class DatabaseManager:
                 (ai_name,)
             )
             logging.info(f"AI {ai_name} respawned successfully")
+
+    def is_guest_account(self, username: str) -> bool:
+        """Check if username is a guest account (guest, guest1, guest2, etc.)."""
+        if username == "guest":
+            return True
+        if username.startswith("guest") and len(username) > 5:
+            # Check if the part after "guest" is numeric
+            suffix = username[5:]
+            return suffix.isdigit()
+        return False
+
+    def update_guest_activity(self, username: str) -> None:
+        """Update last activity timestamp for a guest account."""
+        if not self.is_guest_account(username):
+            return
+        
+        now = time.time()
+        with self.get_cursor() as cursor:
+            cursor.execute("""
+                INSERT OR REPLACE INTO guest_accounts 
+                (username, last_activity, last_reset, total_resets, created_at)
+                VALUES (?, ?, COALESCE((SELECT last_reset FROM guest_accounts WHERE username = ?), ?), 
+                        COALESCE((SELECT total_resets FROM guest_accounts WHERE username = ?), 0),
+                        COALESCE((SELECT created_at FROM guest_accounts WHERE username = ?), ?))
+            """, (username, now, username, now, username, username, now))
+
+    def should_reset_guest_account(self, username: str, inactivity_hours: int = 24) -> bool:
+        """Check if a guest account should be reset due to inactivity."""
+        if not self.is_guest_account(username):
+            return False
+        
+        with self.get_cursor() as cursor:
+            cursor.execute(
+                "SELECT last_activity FROM guest_accounts WHERE username = ?",
+                (username,)
+            )
+            row = cursor.fetchone()
+            
+            if not row:
+                return False  # New guest account, no reset needed
+            
+            # Check if inactive for more than specified hours
+            now = time.time()
+            hours_since_activity = (now - row['last_activity']) / 3600
+            return hours_since_activity >= inactivity_hours
+
+    def reset_guest_account(self, username: str) -> bool:
+        """Reset a guest account (clear wallet, transactions, actions)."""
+        if not self.is_guest_account(username):
+            return False
+        
+        now = time.time()
+        with self.get_cursor() as cursor:
+            try:
+                # Delete all transactions for this guest
+                cursor.execute("DELETE FROM transactions WHERE player_name = ?", (username,))
+                
+                # Delete all actions for this guest  
+                cursor.execute("DELETE FROM actions WHERE player_name = ?", (username,))
+                
+                # Reset wallet to default state
+                cursor.execute("""
+                    INSERT OR REPLACE INTO wallets 
+                    (player_name, balance, total_winnings, total_losses, games_played, last_activity, created_at)
+                    VALUES (?, 500, 0, 0, 0, ?, ?)
+                """, (username, now, now))
+                
+                # Update guest account reset tracking
+                cursor.execute("""
+                    INSERT OR REPLACE INTO guest_accounts 
+                    (username, last_activity, last_reset, total_resets, created_at)
+                    VALUES (?, ?, ?, 
+                            COALESCE((SELECT total_resets FROM guest_accounts WHERE username = ?), 0) + 1,
+                            COALESCE((SELECT created_at FROM guest_accounts WHERE username = ?), ?))
+                """, (username, now, now, username, username, now))
+                
+                logging.info(f"Reset guest account {username} due to inactivity")
+                return True
+                
+            except Exception as e:
+                logging.error(f"Failed to reset guest account {username}: {e}")
+                return False
+
+    def get_guest_reset_info(self, username: str) -> Optional[Dict[str, Any]]:
+        """Get reset information for a guest account."""
+        if not self.is_guest_account(username):
+            return None
+        
+        with self.get_cursor() as cursor:
+            cursor.execute(
+                "SELECT last_reset, total_resets FROM guest_accounts WHERE username = ?",
+                (username,)
+            )
+            row = cursor.fetchone()
+            
+            if row:
+                return {
+                    'last_reset': row['last_reset'],
+                    'total_resets': row['total_resets']
+                }
+            return None
 
 
 # Global database instance
