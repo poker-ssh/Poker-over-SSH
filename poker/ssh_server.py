@@ -65,11 +65,13 @@ if asyncssh:
             logging.debug("SSH connection established")
 
         def password_auth_supported(self):
-            # Support password auth only for guest users
-            return True
+            # Only support password auth for guest users
+            return False
 
         def password_auth(self, username, password):
-            """Allow password authentication for guest users."""
+            """Allow password authentication for guest users ONLY."""
+            # This method should not be called since password_auth_supported returns False
+            # But if it is called for some stupid reason, only authenticate guest users
             return self.auth_handler.authenticate_password(username, password)
 
         def public_key_auth_supported(self):
@@ -93,9 +95,9 @@ if asyncssh:
             return self.auth_handler.get_auth_banner()
 
         def keyboard_interactive_auth_supported(self):
-            # Enable keyboard-interactive auth to show banners/messages
-            logging.info("keyboard_interactive_auth_supported() called - returning True")
-            return True
+            # Disable keyboard-interactive auth completely to force public key auth only
+            logging.info("keyboard_interactive_auth_supported() called - returning False")
+            return False
         
         def get_kbdint_challenge(self, username, lang, submethods):
             """Get keyboard-interactive challenge to display banner to users."""
