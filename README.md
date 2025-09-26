@@ -14,7 +14,7 @@ The codebase is organised into several modules: an SSH server and terminal UI (`
 
 ## Play the public demo (fast)
 
-[![Poker over SSH server status](https://poker-status.qincai.xyz/api/badge/1/status)](https://poker-status-prod.qincai.xyz/)
+[![Poker over SSH server status](https://poker-status.qincai.xyz/api/badge/7/status)](https://poker-status-prod.qincai.xyz/)
 
 Want to try the game right away? Connect to the public demo server:
 
@@ -35,7 +35,7 @@ ssh play.poker.qincai.xyz
 > - No one else has previously connected with your username.
 > - Permissions on your `~/.ssh` directory are set to `700`, and your key files to `600`.
 > - If you are still having issues, try connecting using a different username: `ssh <different_username>@play.poker.qincai.xyz`
-> Or if you are too lazy to set up SSH keys, try: `ssh guest@play.poker.qincai.xyz`
+> - **Or if you are too lazy to set up SSH keys, try: `ssh guest@play.poker.qincai.xyz`**
 
 Your SSH username will be used as your in-game name. This is a public demo instance — expect ephemeral data and occasional resets of database (oh and downtime).
 

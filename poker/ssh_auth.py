@@ -125,12 +125,15 @@ class SSHAuthentication:
             return False
 
     def authenticate_password(self, username, password):
-        """Verify password authentication for guest users."""
+        """Verify password authentication for guest users only."""
         if self._is_guest_account(username):
             # For guest users, accept any password or no password
             logging.info(f"✅ Password authentication successful for guest user {username}")
             return True
-        return False
+        else:
+            # For non-guest users, deny password authentication completely
+            logging.warning(f"🔒 Password authentication DENIED for non-guest user {username} - only SSH key authentication allowed")
+            return False
 
     def authenticate_public_key(self, username, key):
         """Verify SSH public key authentication using the key sent by client."""
@@ -188,7 +191,7 @@ class SSHAuthentication:
                 "Welcome to Poker over SSH!\r\n"
                 f"Not working? MAKE SURE you have generated an SSH keypair: `ssh-keygen -N \"\" -t ed25519` (and press ENTER at all prompts), and you are really who you say you are!\r\n"
                 f"If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@{ssh_connection}\r\n\r\n"
-                f"For instant access without SSH keys or passwords, use: ssh guest@{ssh_connection} (or guest1, guest2, guest3, etc.)\r\n"
+                f"For instant access without SSH keys, use: ssh guest@{ssh_connection} (or guest1, guest2, guest3, etc.)\r\n"
                 "Click on the HELP button on https://poker.qincai.xyz for detailed instructions.\r\n\r\n"
             )
         except Exception:
@@ -197,7 +200,7 @@ class SSHAuthentication:
                 "Welcome to Poker over SSH!\r\n"
                 "Not working? MAKE SURE you have generated an SSH keypair: `ssh-keygen -N \"\" -t ed25519` (and press ENTER at all prompts), and you are really who you say you are!\r\n"
                 "If you are sure you have done everything correctly, try reconnecting with a different username: ssh <different_username>@<host> -p <port>\r\n\r\n"
-                "For instant access without SSH keys or passwords, use: ssh guest@<host> -p <port> (or guest1, guest2, guest3, etc.)\r\n"
+                "For instant access without SSH keys, use: ssh guest@<host> -p <port> (or guest1, guest2, guest3, etc.)\r\n"
                 "Click on the HELP button on https://poker.qincai.xyz for detailed instructions.\r\n\r\n"
             )
 
