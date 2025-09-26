@@ -14,7 +14,7 @@ The codebase is organised into several modules: an SSH server and terminal UI (`
 
 ## Play the public demo (fast)
 
-[![Poker over SSH server status](https://poker-status.qincai.xyz/api/badge/1/status)](https://poker-status-prod.qincai.xyz/)
+[![Poker over SSH server status](https://poker-status.qincai.xyz/api/badge/7/status)](https://poker-status-prod.qincai.xyz/)
 
 Want to try the game right away? Connect to the public demo server:
 
