@@ -4,9 +4,9 @@ This file is automatically updated by GitHub Actions on releases.
 """
 
 # Version information (updated by GitHub Actions)
-VERSION = "1.3.1"
-BUILD_DATE = "2025-09-26 23:21:39 UTC"
-COMMIT_HASH = "98a63dd"
+VERSION = "1.3.2"
+BUILD_DATE = "2025-09-27 03:42:48 UTC"
+COMMIT_HASH = "8a02478"
 
 # Server information
 def get_version_info():
