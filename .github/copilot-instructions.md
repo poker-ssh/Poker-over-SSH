@@ -84,11 +84,9 @@ Poker-over-SSH is a Python-based SSH server that provides a Texas Hold'em poker 
    - Check `poker_data.db` file is created in project root
    - Verify console shows "Database stats: X wallets, Y actions logged"
 
-### No Test Framework
+### Test Framework
 
-- **IMPORTANT**: This repository has NO automated test suite (no pytest, unittest, or test directories)
-- All validation must be done manually through running scenarios above
-- Do NOT attempt to create tests unless specifically requested
+- **IMPORTANT**: This repository has automated test suite (pytest)
 
 ### Linting and Code Quality
 
