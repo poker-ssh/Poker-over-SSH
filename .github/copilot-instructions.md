@@ -7,6 +7,7 @@ Poker-over-SSH is a Python-based SSH server that provides a Texas Hold'em poker 
 ## Working Effectively
 
 ### Bootstrap, Build, and Setup
+
 - Install Python 3.12+ (tested with 3.12.3):
   - `python3 --version` - verify Python version
 - Create virtual environment and install dependencies:
@@ -18,6 +19,7 @@ Poker-over-SSH is a Python-based SSH server that provides a Texas Hold'em poker 
 - **FALLBACK**: If pip install consistently fails due to network timeouts, copy dependencies from an existing working environment.
 
 ### Running the Application
+
 - **Server startup**:
   - `python main.py --host 0.0.0.0 --port 22222` -- starts in ~0.3 seconds
   - Use `--debug` for verbose logging during development
@@ -31,6 +33,7 @@ Poker-over-SSH is a Python-based SSH server that provides a Texas Hold'em poker 
   - Provides JSON status of SSH server connectivity
 
 ### Key File Locations
+
 - **Entry point**: `main.py` - server startup and configuration
 - **Core modules** in `poker/` directory:
   - `ssh_server.py` - SSH server implementation and connection handling
@@ -46,6 +49,7 @@ Poker-over-SSH is a Python-based SSH server that provides a Texas Hold'em poker 
 - **Dependencies**: `requirements.txt` (asyncssh, rich, openai, aiohttp, etc.)
 
 ### Database and Persistence
+
 - SQLite database auto-initializes at `poker_data.db` on first run
 - Contains tables: wallets, transactions, actions, daily_bonuses, ai_respawns, health_history
 - Database file is gitignored and created automatically
@@ -53,6 +57,7 @@ Poker-over-SSH is a Python-based SSH server that provides a Texas Hold'em poker 
 ## Validation and Testing
 
 ### Manual Validation Requirements
+
 **ALWAYS manually validate changes through these scenarios:**
 
 1. **Server Startup Test**:
@@ -71,7 +76,7 @@ Poker-over-SSH is a Python-based SSH server that provides a Texas Hold'em poker 
    - Test room commands: `roomctl list`, `roomctl create`
 
 4. **Healthcheck Test**:
-   - `curl http://127.0.0.1:22223/health` 
+   - `curl http://127.0.0.1:22223/health`
    - Verify JSON response with status field
    - Note: will show "fail" status if probing default port 22222 while server runs on different port
 
@@ -80,11 +85,13 @@ Poker-over-SSH is a Python-based SSH server that provides a Texas Hold'em poker 
    - Verify console shows "Database stats: X wallets, Y actions logged"
 
 ### No Test Framework
+
 - **IMPORTANT**: This repository has NO automated test suite (no pytest, unittest, or test directories)
 - All validation must be done manually through running scenarios above
 - Do NOT attempt to create tests unless specifically requested
 
 ### Linting and Code Quality
+
 - **No linting tools configured** - no flake8, black, pylint, or mypy setup
 - Only markdown linting in `.github/workflows/lint-markdown.yml`
 - Code style follows existing patterns in the codebase
@@ -92,29 +99,35 @@ Poker-over-SSH is a Python-based SSH server that provides a Texas Hold'em poker 
 ## Common Tasks and Navigation
 
 ### Making Code Changes
+
 - **Always test server startup** after changes to core modules
 - **Check database functionality** if modifying `database.py` or wallet operations
 - **Test SSH connectivity** if changing `ssh_server.py` or authentication
 - **Verify UI rendering** if modifying `terminal_ui.py` or display logic
 
 ### AI and External APIs
+
 - AI uses OpenAI-compatible endpoints when `AI_API_KEY` is configured
 - Falls back to built-in heuristic AI when external API unavailable
 - Test AI behavior by starting a game with `seat` and `start` commands
 
 ### Environment Variables
+
 Reference `.env.example` for configuration:
+
 - `SERVER_HOST`, `SERVER_PORT` - server binding
 - `HEALTHCHECK_PORT` - HTTP health service port (default 22223)
 - `AI_API_KEY`, `AI_API_BASE_URL` - external AI configuration
 - Copy to `.env` and modify for local development
 
 ### Room System
+
 - Multiple isolated game rooms supported
 - Commands: `roomctl list`, `roomctl create`, `roomctl join <code>`
 - Each room maintains separate game state and player lists
 
 ### Debugging Common Issues
+
 - **"Address already in use"**: Change port number or kill existing process
 - **SSH permission denied**: Ensure SSH key is generated and username is unique
 - **Database errors**: Delete `poker_data.db` to reset (data will be lost)
@@ -123,12 +136,14 @@ Reference `.env.example` for configuration:
 - **Healthcheck port conflicts**: Default healthcheck port 22223 may conflict if running multiple instances
 
 ## Timing Expectations
+
 - **Installation**: 1-2 minutes (depends on network speed) - NEVER CANCEL
 - **Server startup**: ~0.3 seconds
 - **SSH connection**: immediate once server is running
 - **Database initialization**: immediate on first run
 
 ## Project Structure Summary
+
 ```
 ├── main.py                 # Server entry point
 ├── requirements.txt        # Python dependencies
