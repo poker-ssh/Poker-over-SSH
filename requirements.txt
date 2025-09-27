@@ -4,3 +4,6 @@ asyncio
 openai
 python-dotenv
 aiohttp
+pytest
+pytest-asyncio
+pytest-cov
