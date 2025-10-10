@@ -48,6 +48,7 @@ class Room:
     session_map: Dict[Any, Any]
     game_in_progress: bool
     is_private: bool = True  # Rooms are private by default
+    ai_disabled: bool = False  # Whether AI players are disabled in this room
     
     def __post_init__(self):
         self._game_lock = asyncio.Lock()
@@ -94,7 +95,8 @@ class RoomManager:
             pm=PlayerManager("default"),  # Pass room code to PlayerManager
             session_map={},
             game_in_progress=False,
-            is_private=False  # Default room is public
+            is_private=False,  # Default room is public
+            ai_disabled=False  # AI is always enabled in default room
         )
         self.rooms["default"] = default_room
     
@@ -124,7 +126,8 @@ class RoomManager:
             pm=PlayerManager(code),  # Pass room code to PlayerManager
             session_map={},
             game_in_progress=False,
-            is_private=is_private
+            is_private=is_private,
+            ai_disabled=False  # AI is enabled by default in new rooms
         )
         
         self.rooms[code] = room
@@ -223,6 +226,21 @@ class RoomManager:
                 pass
         
         del self.rooms[code]
+        return True
+
+    def set_ai_disabled(self, code: str, requester: str, disabled: bool) -> bool:
+        """Enable or disable AI players in a room (creator only)."""
+        if code == "default":
+            return False  # Cannot modify default room AI settings
+        
+        room = self.rooms.get(code)
+        if not room:
+            return False
+        
+        if room.creator != requester:
+            return False  # Only creator can modify AI settings
+        
+        room.ai_disabled = disabled
         return True
     
     async def _cleanup_expired_rooms(self):

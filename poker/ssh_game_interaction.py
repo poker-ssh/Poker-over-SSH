@@ -493,18 +493,26 @@ class GameInteraction:
                     await self.session._stdout.drain()
                     return
                 
-                # Add AI players to reach minimum of 4 total players
+                # Add AI players to reach minimum of 4 total players (unless AI is disabled)
                 total_players = list(room.pm.players)
                 min_players = 4
                 current_count = len(total_players)
                 
                 logging.debug(f"Current players: {current_count}, minimum needed: {min_players}")
+                logging.debug(f"Room AI disabled: {room.ai_disabled}")
+
+                # Check if AI is disabled in this room
+                if room.ai_disabled and current_count < min_players:
+                    self.session._stdout.write(f"❌ Need at least {min_players} human players to start a game (AI disabled in this room)\r\n")
+                    self.session._stdout.write(f"🤖 Use 'roomctl enable-ai' to allow AI players or invite more friends!\r\n\r\n❯ ")
+                    await self.session._stdout.drain()
+                    return
 
                 # Potential AI candidates (defined here so available for both loops)
                 # TODO: add more names
                 ai_names = ["AI_Alice", "AI_Bob", "AI_Charlie", "AI_David", "AI_Eve"]
 
-                if current_count < min_players:
+                if current_count < min_players and not room.ai_disabled:
                     existing_ai_names = {p.name for p in total_players if p.is_ai}
                     
                     # Try to add AI players until we reach minimum
@@ -547,14 +555,14 @@ class GameInteraction:
                         
                         added_ais += 1
                         
-                # Ensure we have at least N AI players in the room
+                # Ensure we have at least N AI players in the room (unless AI is disabled)
                 required_ai_count = 3
                 try:
                     current_ai_count = len([p for p in room.pm.players if p.is_ai])
                 except Exception:
                     current_ai_count = 0
 
-                if current_ai_count < required_ai_count:
+                if current_ai_count < required_ai_count and not room.ai_disabled:
                     logging.debug(f"Current AI count: {current_ai_count}, ensuring at least {required_ai_count} AIs")
                     existing_ai_names = {p.name for p in room.pm.players if p.is_ai}
 

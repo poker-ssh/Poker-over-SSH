@@ -157,6 +157,10 @@ class CommandProcessor:
             await self._share_room_code()
         elif subcmd == "delete":
             await self._delete_room()
+        elif subcmd == "disable-ai":
+            await self._disable_ai()
+        elif subcmd == "enable-ai":
+            await self._enable_ai()
         else:
             await self._show_roomctl_help()
 
@@ -193,6 +197,8 @@ class CommandProcessor:
             self.session._stdout.write("   roomctl share          - Share current room code\r\n")
             self.session._stdout.write("   roomctl extend         - Extend current room by 30 minutes\r\n")
             self.session._stdout.write("   roomctl delete         - Delete current room (creator only)\r\n")
+            self.session._stdout.write("   roomctl disable-ai     - Disable AI players (creator only)\r\n")
+            self.session._stdout.write("   roomctl enable-ai      - Enable AI players (creator only)\r\n")
             self.session._stdout.write("\r\n🎮 Game Commands:\r\n")
             self.session._stdout.write("   togglecards / tgc  - Toggle card visibility for privacy\r\n")
             self.session._stdout.write("   togglecards            - Toggle card visibility on/off\r\n")
@@ -226,6 +232,8 @@ class CommandProcessor:
             self.session._stdout.write("  roomctl share          - Share current room code with others\r\n")
             self.session._stdout.write("  roomctl extend         - Extend room expiry by 30 minutes\r\n")
             self.session._stdout.write("  roomctl delete         - Delete current room (creator only)\r\n")
+            self.session._stdout.write("  roomctl disable-ai     - Disable AI players (creator only)\r\n")
+            self.session._stdout.write("  roomctl enable-ai      - Enable AI players (creator only)\r\n")
             self.session._stdout.write("\r\n❯ ")
             await self.session._stdout.drain()
         except Exception:
@@ -392,6 +400,15 @@ class CommandProcessor:
             else:
                 self.session._stdout.write(f"🎮 Game Status: {Colors.YELLOW}Waiting{Colors.RESET}\r\n")
             
+            # Show AI status
+            if room.code == "default":
+                self.session._stdout.write(f"🤖 AI Players: {Colors.GREEN}Enabled{Colors.RESET}\r\n")
+            else:
+                if room.ai_disabled:
+                    self.session._stdout.write(f"🤖 AI Players: {Colors.RED}Disabled{Colors.RESET} (humans only)\r\n")
+                else:
+                    self.session._stdout.write(f"🤖 AI Players: {Colors.GREEN}Enabled{Colors.RESET}\r\n")
+            
             self.session._stdout.write("\r\n❯ ")
             await self.session._stdout.drain()
         except Exception as e:
@@ -489,6 +506,72 @@ class CommandProcessor:
             await self.session._stdout.drain()
         except Exception as e:
             self.session._stdout.write(f"❌ Error deleting room: {e}\r\n\r\n❯ ")
+            await self.session._stdout.drain()
+
+    async def _disable_ai(self):
+        """Disable AI players in current room (creator only)."""
+        try:
+            if not self.session._server_state or not self.session._username:
+                self.session._stdout.write("❌ Server state or username not available\r\n\r\n❯ ")
+                await self.session._stdout.drain()
+                return
+                
+            if self.session._current_room == "default":
+                self.session._stdout.write(f"❌ Cannot modify AI settings in the default room\r\n\r\n❯ ")
+                await self.session._stdout.drain()
+                return
+                
+            success = self.session._server_state.room_manager.set_ai_disabled(self.session._current_room, self.session._username, True)
+            
+            if success:
+                self.session._stdout.write(f"✅ {Colors.GREEN}AI players disabled in this room!{Colors.RESET}\r\n")
+                self.session._stdout.write(f"🤖 Only human players can join games in this room.\r\n")
+                
+                # Remove existing AI players from the room
+                room = self.session._server_state.room_manager.get_room(self.session._current_room)
+                if room:
+                    ai_players_removed = []
+                    for player in list(room.pm.players):
+                        if player.is_ai:
+                            room.pm.remove_player(player.name)
+                            ai_players_removed.append(player.name)
+                    
+                    if ai_players_removed:
+                        self.session._stdout.write(f"🚫 Removed AI players: {', '.join(ai_players_removed)}\r\n")
+            else:
+                self.session._stdout.write(f"❌ Cannot disable AI (not found or not room creator)\r\n")
+            
+            self.session._stdout.write("\r\n❯ ")
+            await self.session._stdout.drain()
+        except Exception as e:
+            self.session._stdout.write(f"❌ Error disabling AI: {e}\r\n\r\n❯ ")
+            await self.session._stdout.drain()
+
+    async def _enable_ai(self):
+        """Enable AI players in current room (creator only)."""
+        try:
+            if not self.session._server_state or not self.session._username:
+                self.session._stdout.write("❌ Server state or username not available\r\n\r\n❯ ")
+                await self.session._stdout.drain()
+                return
+                
+            if self.session._current_room == "default":
+                self.session._stdout.write(f"❌ Cannot modify AI settings in the default room\r\n\r\n❯ ")
+                await self.session._stdout.drain()
+                return
+                
+            success = self.session._server_state.room_manager.set_ai_disabled(self.session._current_room, self.session._username, False)
+            
+            if success:
+                self.session._stdout.write(f"✅ {Colors.GREEN}AI players enabled in this room!{Colors.RESET}\r\n")
+                self.session._stdout.write(f"🤖 AI players can now join games in this room.\r\n")
+            else:
+                self.session._stdout.write(f"❌ Cannot enable AI (not found or not room creator)\r\n")
+            
+            self.session._stdout.write("\r\n❯ ")
+            await self.session._stdout.drain()
+        except Exception as e:
+            self.session._stdout.write(f"❌ Error enabling AI: {e}\r\n\r\n❯ ")
             await self.session._stdout.drain()
 
     async def _handle_toggle_cards(self):

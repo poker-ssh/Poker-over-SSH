@@ -115,6 +115,19 @@ class PlayerManager:
         
         return player
 
+    def remove_player(self, name: str) -> bool:
+        """Remove a player from the room."""
+        try:
+            player = next((p for p in self.players if p.name == name), None)
+            if player:
+                self.players.remove(player)
+                logging.debug(f"Removed player {name} from room {self.room_code}")
+                return True
+            return False
+        except Exception as e:
+            logging.error(f"Error removing player {name}: {e}")
+            return False
+
     def assign_seats(self):
         # simple sequential seat assignment
         return {i + 1: p.name for i, p in enumerate(self.players)}
